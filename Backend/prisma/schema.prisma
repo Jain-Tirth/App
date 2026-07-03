@@ -1,0 +1,556 @@
+// ============================================================
+// DHOBI MATRIMONY — Prisma Schema
+// All 15 tables from the spec, exactly as defined.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum Role {
+  user
+  admin
+}
+
+enum MembershipType {
+  regular
+  prime
+}
+
+enum AccountStatus {
+  pending
+  active
+  rejected
+  blocked
+}
+
+enum ProfileCreatedBy {
+  myself
+  son
+  daughter
+  brother
+  sister
+  friend
+  relative
+}
+
+enum Gender {
+  male
+  female
+}
+
+enum BodyType {
+  normal
+  athletic
+  heavy
+  slim
+}
+
+enum PhysicalStatus {
+  normal
+  physically_challenged
+}
+
+enum MaritalStatus {
+  never_married
+  widower
+  awaiting_divorce
+  divorced
+}
+
+enum EatingHabits {
+  vegetarian
+  non_vegetarian
+  eggetarian
+}
+
+enum ResidentStatus {
+  citizen
+  student_visa
+  work_visa
+  pr
+}
+
+enum Dosh {
+  no
+  yes
+  dont_know
+}
+
+enum EmploymentType {
+  private
+  business
+  defence
+  government_psu
+  not_working
+  self_employed
+}
+
+enum FamilyStatus {
+  middle_class
+  upper_middle_class
+  rich_affluent
+}
+
+enum ValidationStatus {
+  pending
+  approved
+  rejected
+}
+
+enum DocumentType {
+  aadhaar
+  pan
+  driving_licence
+  voter_id
+  other
+}
+
+enum InterestStatus {
+  pending
+  accepted
+  declined
+}
+
+enum InterestSentVia {
+  button
+  swipe
+}
+
+enum NotificationType {
+  interest_received
+  interest_accepted
+  profile_approved
+  new_message
+  profile_viewed
+}
+
+// ─────────────────────────────────────────────
+// TABLE 1: users
+// ─────────────────────────────────────────────
+
+model User {
+  id               String          @id @default(uuid()) @db.Uuid
+  name             String          @db.VarChar(100)
+  email            String          @unique @db.VarChar(150)
+  passwordHash     String          @map("password_hash")
+  mobile           String          @unique @db.VarChar(15)
+  mobileVerified   Boolean         @default(false) @map("mobile_verified")
+  emailVerified    Boolean         @default(false) @map("email_verified")
+  role             Role            @default(user)
+  membershipType   MembershipType  @default(regular) @map("membership_type")
+  accountStatus    AccountStatus   @default(pending) @map("account_status")
+  rejectionReason  String?         @map("rejection_reason")
+  profileCreatedBy ProfileCreatedBy? @map("profile_created_by")
+  gender           Gender?
+  lastSeen         DateTime?       @map("last_seen")
+  otpCode          String?         @db.VarChar(6) @map("otp_code")
+  otpExpiresAt     DateTime?       @map("otp_expires_at")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  // Relations
+  profile                 Profile?
+  partnerPreferences      PartnerPreference?
+  photos                  ProfilePhoto[]
+  idVerifications         IdVerification[]     @relation("UserIdVerifications")
+  reviewedIdVerifications IdVerification[]     @relation("ReviewedIdVerifications")
+  sentInterests           Interest[]           @relation("SentInterests")
+  receivedInterests       Interest[]           @relation("ReceivedInterests")
+  shortlists              Shortlist[]          @relation("UserShortlists")
+  shortlistedBy           Shortlist[]          @relation("ShortlistedProfiles")
+  hiddenProfiles          HiddenProfile[]      @relation("UserHiddenProfiles")
+  hiddenByUsers           HiddenProfile[]      @relation("HiddenFromUsers")
+  sentMessages            Message[]
+  conversations1          Conversation[]       @relation("ConversationUser1")
+  conversations2          Conversation[]       @relation("ConversationUser2")
+  notifications           Notification[]
+  recommendationsFor      DailyRecommendation[] @relation("RecommendationsFor")
+  recommendedProfiles     DailyRecommendation[] @relation("RecommendedProfiles")
+  profileViews            ProfileView[]        @relation("ViewerViews")
+  profileViewedBy         ProfileView[]        @relation("ViewedProfileViews")
+  adminAuditLogs          AdminAuditLog[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// TABLE 2: profiles
+// ─────────────────────────────────────────────
+
+model Profile {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @unique @db.Uuid @map("user_id")
+  profileUid     String?  @unique @db.VarChar(15) @map("profile_uid") // e.g. DHB1234567
+
+  // Step 1: Personal Details
+  dateOfBirth    DateTime @map("date_of_birth") @db.Date
+  heightCm       Int?     @map("height_cm")
+  weightKg       Int?     @map("weight_kg")
+  bodyType       BodyType? @map("body_type")
+  physicalStatus PhysicalStatus? @map("physical_status")
+  maritalStatus  MaritalStatus?  @map("marital_status")
+  spokenLanguages String[] @map("spoken_languages")
+  eatingHabits   EatingHabits?   @map("eating_habits")
+  residentStatus ResidentStatus? @map("resident_status")
+
+  // Step 2: Religious Details
+  religion       String?  @db.VarChar(50)
+  caste          String?  @db.VarChar(100)
+  subcaste       String?  @db.VarChar(100)
+  openToAnySubcaste Boolean @default(false) @map("open_to_any_subcaste")
+  gothra         String?  @db.VarChar(100)
+  dosh           Dosh?
+  manglik        Dosh?    // reusing Dosh enum (no/yes/dont_know)
+
+  // Step 3: Location
+  country        String?  @db.VarChar(100)
+  state          String?  @db.VarChar(100)
+  city           String?  @db.VarChar(100)
+
+  // Step 4: Professional
+  education      String?  @db.VarChar(150)
+  employmentType EmploymentType? @map("employment_type")
+  occupation     String?  @db.VarChar(150)
+  incomeCurrency String?  @default("INR") @db.VarChar(10) @map("income_currency")
+  annualIncomeRange String? @db.VarChar(50) @map("annual_income_range")
+
+  // Step 5: Additional
+  familyStatus   FamilyStatus? @map("family_status")
+  aboutMyself    String?  @map("about_myself")
+  lookingFor     String?  @map("looking_for")
+
+  // Lifestyle (filled via Edit Profile, not during wizard)
+  cuisine        String[] @default([])
+  hobbies        String[] @default([])
+  interests      String[] @default([])
+  music          String[] @default([])
+  smokingHabits  String?  @db.VarChar(30) @map("smoking_habits")
+  drinkingHabits String?  @db.VarChar(30) @map("drinking_habits")
+  movies         String[] @default([])
+  books          String[] @default([])
+
+  // Horoscope (optional)
+  birthTime       DateTime? @map("birth_time") @db.Time()
+  birthPlaceCountry String? @db.VarChar(100) @map("birth_place_country")
+  star            String?  @db.VarChar(50)
+  raasi           String?  @db.VarChar(50)
+  kundliScore     Int?     @map("kundli_score")
+  horoscopeFileUrl String? @map("horoscope_file_url")
+
+  // Status flags
+  photoVerified   Boolean @default(false) @map("photo_verified")
+  idVerified      Boolean @default(false) @map("id_verified")
+  profileComplete Int     @default(0) @map("profile_complete") // 0–100
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("profiles")
+}
+
+// ─────────────────────────────────────────────
+// TABLE 3: partner_preferences
+// ─────────────────────────────────────────────
+
+model PartnerPreference {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @unique @db.Uuid @map("user_id")
+
+  // Basic Preferences
+  prefAgeMin       Int?      @map("pref_age_min")
+  prefAgeMax       Int?      @map("pref_age_max")
+  prefHeightMinCm  Int?      @map("pref_height_min_cm")
+  prefHeightMaxCm  Int?      @map("pref_height_max_cm")
+  prefMaritalStatus String[] @default([]) @map("pref_marital_status")
+  prefMotherTongue  String[] @default([]) @map("pref_mother_tongue")
+  prefPhysicalStatus String[] @default([]) @map("pref_physical_status")
+  prefEatingHabits  String[] @default([]) @map("pref_eating_habits")
+  prefSmokingHabits String[] @default([]) @map("pref_smoking_habits")
+  prefDrinkingHabits String[] @default([]) @map("pref_drinking_habits")
+
+  // Religious Preferences
+  prefReligion  String[] @default([]) @map("pref_religion")
+  prefCaste     String[] @default([]) @map("pref_caste")
+  prefSubcaste  String[] @default([]) @map("pref_subcaste")
+  openToAnyCaste Boolean @default(false) @map("open_to_any_caste")
+
+  // Location Preferences
+  prefCountry     String[] @default([]) @map("pref_country")
+  prefState       String[] @default([]) @map("pref_state")
+  prefCity        String[] @default([]) @map("pref_city")
+  prefCitizenship String[] @default([]) @map("pref_citizenship")
+
+  // Professional Preferences
+  prefEducation     String[] @default([]) @map("pref_education")
+  prefEmploymentType String[] @default([]) @map("pref_employment_type")
+  prefOccupation    String[] @default([]) @map("pref_occupation")
+  prefIncomeMin     Int?     @map("pref_income_min")
+  prefIncomeMax     Int?     @map("pref_income_max")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("partner_preferences")
+}
+
+// ─────────────────────────────────────────────
+// TABLE 4: profile_photos
+// ─────────────────────────────────────────────
+
+model ProfilePhoto {
+  id               String           @id @default(uuid()) @db.Uuid
+  userId           String           @db.Uuid @map("user_id")
+  fileUrl          String           @map("file_url")
+  thumbnailUrl     String?          @map("thumbnail_url")
+  isPrimary        Boolean          @default(false) @map("is_primary")
+  sortOrder        Int              @default(0) @map("sort_order")
+  validationStatus ValidationStatus @default(pending) @map("validation_status")
+  uploadedAt       DateTime         @default(now()) @map("uploaded_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("profile_photos")
+}
+
+// ─────────────────────────────────────────────
+// TABLE 5: id_verifications
+// ─────────────────────────────────────────────
+
+model IdVerification {
+  id             String       @id @default(uuid()) @db.Uuid
+  userId         String       @db.Uuid @map("user_id")
+  documentType   DocumentType @map("document_type")
+  documentNumber String?      @map("document_number") // encrypted at app level
+  frontImageUrl  String?      @map("front_image_url") // private S3 bucket
+  backImageUrl   String?      @map("back_image_url")
+  selfieUrl      String?      @map("selfie_url")
+  ocrName        String?      @map("ocr_name")
+  ocrDob         DateTime?    @map("ocr_dob") @db.Date
+  ocrConfidence  Float?       @map("ocr_confidence")
+  faceMatchScore Float?       @map("face_match_score") // 0.0–1.0
+  ageVerified    Boolean?     @map("age_verified")
+  status         ValidationStatus @default(pending)
+  adminNote      String?      @map("admin_note")
+  reviewedById   String?      @db.Uuid @map("reviewed_by")
+  reviewedAt     DateTime?    @map("reviewed_at")
+  submittedAt    DateTime     @default(now()) @map("submitted_at")
+
+  user       User  @relation("UserIdVerifications", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("ReviewedIdVerifications", fields: [reviewedById], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@map("id_verifications")
+}
+
+// ─────────────────────────────────────────────
+// TABLE 6: interests
+// ─────────────────────────────────────────────
+
+model Interest {
+  id          String          @id @default(uuid()) @db.Uuid
+  senderId    String          @db.Uuid @map("sender_id")
+  receiverId  String          @db.Uuid @map("receiver_id")
+  status      InterestStatus  @default(pending)
+  sentVia     InterestSentVia? @map("sent_via")
+  respondedAt DateTime?       @map("responded_at")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  sender   User @relation("SentInterests", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedInterests", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, receiverId])
+  @@index([receiverId])
+  @@index([status])
+  @@map("interests")
+}
+
+// ─────────────────────────────────────────────
+// TABLE 7: shortlists
+// ─────────────────────────────────────────────
+
+model Shortlist {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid @map("user_id")
+  targetId  String   @db.Uuid @map("target_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User @relation("UserShortlists", fields: [userId], references: [id], onDelete: Cascade)
+  target User @relation("ShortlistedProfiles", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, targetId])
+  @@index([userId])
+  @@map("shortlists")
+}
+
+// ─────────────────────────────────────────────
+// TABLE 8: hidden_profiles
+// ─────────────────────────────────────────────
+
+model HiddenProfile {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid @map("user_id")
+  hiddenId  String   @db.Uuid @map("hidden_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User @relation("UserHiddenProfiles", fields: [userId], references: [id], onDelete: Cascade)
+  hidden User @relation("HiddenFromUsers", fields: [hiddenId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, hiddenId])
+  @@index([userId])
+  @@map("hidden_profiles")
+}
+
+// ─────────────────────────────────────────────
+// TABLE 9: conversations
+// ─────────────────────────────────────────────
+
+model Conversation {
+  id            String    @id @default(uuid()) @db.Uuid
+  user1Id       String    @db.Uuid @map("user1_id")
+  user2Id       String    @db.Uuid @map("user2_id")
+  lastMessage   String?   @map("last_message")
+  lastMessageAt DateTime? @map("last_message_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  user1    User      @relation("ConversationUser1", fields: [user1Id], references: [id])
+  user2    User      @relation("ConversationUser2", fields: [user2Id], references: [id])
+  messages Message[]
+
+  @@unique([user1Id, user2Id])
+  @@index([user1Id])
+  @@index([user2Id])
+  @@map("conversations")
+}
+
+// ─────────────────────────────────────────────
+// TABLE 10: messages
+// ─────────────────────────────────────────────
+
+model Message {
+  id             String    @id @default(uuid()) @db.Uuid
+  conversationId String    @db.Uuid @map("conversation_id")
+  senderId       String    @db.Uuid @map("sender_id")
+  content        String
+  isRead         Boolean   @default(false) @map("is_read")
+  readAt         DateTime? @map("read_at")
+  deletedAt      DateTime? @map("deleted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  sender       User         @relation(fields: [senderId], references: [id])
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@map("messages")
+}
+
+// ─────────────────────────────────────────────
+// TABLE 11: notifications
+// ─────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @db.Uuid @map("user_id")
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?            @db.JsonB
+  isRead    Boolean          @default(false) @map("is_read")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+// ─────────────────────────────────────────────
+// TABLE 12: daily_recommendations
+// ─────────────────────────────────────────────
+
+model DailyRecommendation {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid @map("user_id")
+  recommendedId String   @db.Uuid @map("recommended_id")
+  date          DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
+  shown         Boolean  @default(false)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user        User @relation("RecommendationsFor", fields: [userId], references: [id], onDelete: Cascade)
+  recommended User @relation("RecommendedProfiles", fields: [recommendedId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recommendedId, date])
+  @@index([userId, date])
+  @@map("daily_recommendations")
+}
+
+// ─────────────────────────────────────────────
+// TABLE 13: profile_views
+// ─────────────────────────────────────────────
+
+model ProfileView {
+  id       String   @id @default(uuid()) @db.Uuid
+  viewerId String   @db.Uuid @map("viewer_id")
+  viewedId String   @db.Uuid @map("viewed_id")
+  viewedAt DateTime @default(now()) @map("viewed_at")
+
+  viewer User @relation("ViewerViews", fields: [viewerId], references: [id])
+  viewed User @relation("ViewedProfileViews", fields: [viewedId], references: [id])
+
+  @@index([viewedId])
+  @@index([viewerId])
+  @@map("profile_views")
+}
+
+// ─────────────────────────────────────────────
+// TABLE 14: app_versions
+// ─────────────────────────────────────────────
+
+model AppVersion {
+  id            String   @id @default(uuid()) @db.Uuid
+  versionCode   Int      @map("version_code")
+  versionName   String   @db.VarChar(20) @map("version_name") // e.g. '1.0.0'
+  apkUrl        String   @map("apk_url")
+  releaseNotes  String?  @map("release_notes")
+  isForceUpdate Boolean  @default(false) @map("is_force_update")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("app_versions")
+}
+
+// ─────────────────────────────────────────────
+// TABLE 15: admin_audit_log
+// ─────────────────────────────────────────────
+
+model AdminAuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  adminId   String   @db.Uuid @map("admin_id")
+  action    String   @db.VarChar(100)
+  targetId  String?  @db.Uuid @map("target_id")
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  admin User @relation(fields: [adminId], references: [id])
+
+  @@index([adminId])
+  @@index([targetId])
+  @@map("admin_audit_log")
+}
