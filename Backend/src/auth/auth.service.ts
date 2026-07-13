@@ -184,12 +184,17 @@ export class AuthService {
       throw new ForbiddenException('Verify your mobile number before logging in.');
     }
 
-    if (
-      user.accountStatus === AccountStatus.blocked ||
-      user.accountStatus === AccountStatus.rejected
-    ) {
+    if (user.accountStatus === AccountStatus.blocked) {
       throw new ForbiddenException(
         `This account is ${user.accountStatus}. Contact support for help.`,
+      );
+    }
+
+    if (user.accountStatus === AccountStatus.rejected) {
+      throw new ForbiddenException(
+        user.rejectionReason
+          ? `This account is rejected: ${user.rejectionReason}`
+          : 'This account is rejected. Contact support for help.',
       );
     }
 

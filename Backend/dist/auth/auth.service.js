@@ -177,9 +177,13 @@ let AuthService = class AuthService {
         if (!user.mobileVerified) {
             throw new common_1.ForbiddenException('Verify your mobile number before logging in.');
         }
-        if (user.accountStatus === client_1.AccountStatus.blocked ||
-            user.accountStatus === client_1.AccountStatus.rejected) {
+        if (user.accountStatus === client_1.AccountStatus.blocked) {
             throw new common_1.ForbiddenException(`This account is ${user.accountStatus}. Contact support for help.`);
+        }
+        if (user.accountStatus === client_1.AccountStatus.rejected) {
+            throw new common_1.ForbiddenException(user.rejectionReason
+                ? `This account is rejected: ${user.rejectionReason}`
+                : 'This account is rejected. Contact support for help.');
         }
         const tokens = await this.generateTokens(user);
         const refreshTokenHash = await bcrypt.hash(tokens.refreshToken, BCRYPT_ROUNDS);
