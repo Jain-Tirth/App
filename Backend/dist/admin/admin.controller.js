@@ -17,14 +17,21 @@ const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const current_user_decorator_1 = require("../auth/decorators/current-user.decorator");
 const roles_decorator_1 = require("../auth/decorators/roles.decorator");
-const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
 const roles_guard_1 = require("../auth/guards/roles.guard");
+const admin_jwt_auth_guard_1 = require("./admin-jwt-auth.guard");
+const admin_login_dto_1 = require("./dto/admin-login.dto");
 const admin_service_1 = require("./admin.service");
 const reject_profile_dto_1 = require("./dto/reject-profile.dto");
 let AdminController = class AdminController {
     adminService;
     constructor(adminService) {
         this.adminService = adminService;
+    }
+    login(dto) {
+        return this.adminService.login(dto);
+    }
+    getDashboardStats() {
+        return this.adminService.getDashboardStats();
     }
     listPendingProfiles() {
         return this.adminService.listPendingProfiles();
@@ -41,12 +48,31 @@ let AdminController = class AdminController {
 };
 exports.AdminController = AdminController;
 __decorate([
+    (0, common_1.Post)('login'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [admin_login_dto_1.AdminLoginDto]),
+    __metadata("design:returntype", void 0)
+], AdminController.prototype, "login", null);
+__decorate([
+    (0, common_1.UseGuards)(admin_jwt_auth_guard_1.AdminJwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.Role.admin),
+    (0, common_1.Get)('stats'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", void 0)
+], AdminController.prototype, "getDashboardStats", null);
+__decorate([
+    (0, common_1.UseGuards)(admin_jwt_auth_guard_1.AdminJwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.Role.admin),
     (0, common_1.Get)('profiles/pending'),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], AdminController.prototype, "listPendingProfiles", null);
 __decorate([
+    (0, common_1.UseGuards)(admin_jwt_auth_guard_1.AdminJwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.Role.admin),
     (0, common_1.Get)('profiles/:userId'),
     __param(0, (0, common_1.Param)('userId')),
     __metadata("design:type", Function),
@@ -54,6 +80,8 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], AdminController.prototype, "getProfileForReview", null);
 __decorate([
+    (0, common_1.UseGuards)(admin_jwt_auth_guard_1.AdminJwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.Role.admin),
     (0, common_1.Patch)('profiles/:userId/approve'),
     __param(0, (0, common_1.Param)('userId')),
     __param(1, (0, current_user_decorator_1.CurrentUser)()),
@@ -62,6 +90,8 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], AdminController.prototype, "approveProfile", null);
 __decorate([
+    (0, common_1.UseGuards)(admin_jwt_auth_guard_1.AdminJwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.Role.admin),
     (0, common_1.Patch)('profiles/:userId/reject'),
     __param(0, (0, common_1.Param)('userId')),
     __param(1, (0, common_1.Body)()),
@@ -71,8 +101,6 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], AdminController.prototype, "rejectProfile", null);
 exports.AdminController = AdminController = __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
-    (0, roles_decorator_1.Roles)(client_1.Role.admin),
     (0, common_1.Controller)('admin'),
     __metadata("design:paramtypes", [admin_service_1.AdminService])
 ], AdminController);

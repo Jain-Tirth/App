@@ -1,9 +1,26 @@
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { AdminLoginDto } from './dto/admin-login.dto';
 import { AdminService } from './admin.service';
 import { RejectProfileDto } from './dto/reject-profile.dto';
 export declare class AdminController {
     private readonly adminService;
     constructor(adminService: AdminService);
+    login(dto: AdminLoginDto): Promise<{
+        message: string;
+        admin: {
+            id: string;
+            name: string;
+            email: string;
+            role: "admin";
+        };
+        accessToken: string;
+    }>;
+    getDashboardStats(): Promise<{
+        pendingProfiles: number;
+        approvedProfiles: number;
+        rejectedProfiles: number;
+        totalProfiles: number;
+    }>;
     listPendingProfiles(): Promise<{
         total: number;
         profiles: {

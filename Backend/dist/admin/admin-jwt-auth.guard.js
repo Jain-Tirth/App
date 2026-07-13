@@ -6,20 +6,13 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AdminModule = void 0;
+exports.AdminJwtAuthGuard = void 0;
 const common_1 = require("@nestjs/common");
-const jwt_1 = require("@nestjs/jwt");
-const admin_controller_1 = require("./admin.controller");
-const admin_jwt_strategy_1 = require("./admin-jwt.strategy");
-const admin_service_1 = require("./admin.service");
-let AdminModule = class AdminModule {
+const passport_1 = require("@nestjs/passport");
+let AdminJwtAuthGuard = class AdminJwtAuthGuard extends (0, passport_1.AuthGuard)('admin-jwt') {
 };
-exports.AdminModule = AdminModule;
-exports.AdminModule = AdminModule = __decorate([
-    (0, common_1.Module)({
-        imports: [jwt_1.JwtModule.register({})],
-        controllers: [admin_controller_1.AdminController],
-        providers: [admin_service_1.AdminService, admin_jwt_strategy_1.AdminJwtStrategy],
-    })
-], AdminModule);
-//# sourceMappingURL=admin.module.js.map
+exports.AdminJwtAuthGuard = AdminJwtAuthGuard;
+exports.AdminJwtAuthGuard = AdminJwtAuthGuard = __decorate([
+    (0, common_1.Injectable)()
+], AdminJwtAuthGuard);
+//# sourceMappingURL=admin-jwt-auth.guard.js.map

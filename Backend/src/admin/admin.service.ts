@@ -2,10 +2,16 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { AccountStatus, Prisma, User } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
+import type { StringValue } from 'ms';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
+import { AdminLoginDto } from './dto/admin-login.dto';
 import { RejectProfileDto } from './dto/reject-profile.dto';
 
 type AdminProfileRecord = Prisma.ProfileGetPayload<{
@@ -16,7 +22,78 @@ type AdminProfileRecord = Prisma.ProfileGetPayload<{
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  async login(dto: AdminLoginDto) {
+    const email = dto.email.trim().toLowerCase();
+    const admin = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!admin || admin.role !== 'admin') {
+      throw new UnauthorizedException('Invalid admin credentials.');
+    }
+
+    const passwordMatches = await bcrypt.compare(dto.password, admin.passwordHash);
+    if (!passwordMatches) {
+      throw new UnauthorizedException('Invalid admin credentials.');
+    }
+
+    const accessToken = await this.jwtService.signAsync(
+      {
+        sub: admin.id,
+        email: admin.email,
+        role: admin.role,
+      },
+      {
+        secret: this.configService.getOrThrow<string>('ADMIN_JWT_SECRET'),
+        expiresIn: this.configService.get<string>(
+          'ADMIN_JWT_EXPIRES_IN',
+          '12h',
+        ) as StringValue,
+      },
+    );
+
+    return {
+      message: 'Admin login successful.',
+      admin: {
+        id: admin.id,
+        name: admin.name,
+        email: admin.email,
+        role: admin.role,
+      },
+      accessToken,
+    };
+  }
+
+  async getDashboardStats() {
+    const [pendingProfiles, activeUsers, rejectedUsers, totalProfiles] =
+      await Promise.all([
+        this.prisma.profile.count({
+          where: { user: { accountStatus: AccountStatus.pending, role: 'user' } },
+        }),
+        this.prisma.user.count({
+          where: { accountStatus: AccountStatus.active, role: 'user' },
+        }),
+        this.prisma.user.count({
+          where: { accountStatus: AccountStatus.rejected, role: 'user' },
+        }),
+        this.prisma.profile.count({
+          where: { user: { role: 'user' } },
+        }),
+      ]);
+
+    return {
+      pendingProfiles,
+      approvedProfiles: activeUsers,
+      rejectedProfiles: rejectedUsers,
+      totalProfiles,
+    };
+  }
 
   async listPendingProfiles() {
     const profiles = await this.prisma.profile.findMany({

@@ -1,9 +1,30 @@
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
+import { AdminLoginDto } from './dto/admin-login.dto';
 import { RejectProfileDto } from './dto/reject-profile.dto';
 export declare class AdminService {
     private readonly prisma;
-    constructor(prisma: PrismaService);
+    private readonly jwtService;
+    private readonly configService;
+    constructor(prisma: PrismaService, jwtService: JwtService, configService: ConfigService);
+    login(dto: AdminLoginDto): Promise<{
+        message: string;
+        admin: {
+            id: string;
+            name: string;
+            email: string;
+            role: "admin";
+        };
+        accessToken: string;
+    }>;
+    getDashboardStats(): Promise<{
+        pendingProfiles: number;
+        approvedProfiles: number;
+        rejectedProfiles: number;
+        totalProfiles: number;
+    }>;
     listPendingProfiles(): Promise<{
         total: number;
         profiles: {
