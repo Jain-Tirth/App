@@ -155,6 +155,10 @@ model User {
   lastSeen         DateTime?       @map("last_seen")
   otpCode          String?         @db.VarChar(6) @map("otp_code")
   otpExpiresAt     DateTime?       @map("otp_expires_at")
+  otpRequestCount  Int             @default(0) @map("otp_request_count")
+  otpWindowStartedAt DateTime?     @map("otp_window_started_at")
+  refreshTokenHash String?         @map("refresh_token_hash")
+  refreshTokenExpiresAt DateTime?  @map("refresh_token_expires_at")
   createdAt        DateTime        @default(now()) @map("created_at")
   updatedAt        DateTime        @updatedAt @map("updated_at")
 
