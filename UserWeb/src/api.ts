@@ -43,10 +43,10 @@ export const api = {
       body: JSON.stringify({ countryCode, mobileNumber }),
     });
   },
-  verifyOtp(countryCode: string, mobileNumber: string, otpCode: string) {
+  verifyOtp(countryCode: string, mobileNumber: string, otpCode: string, otpToken?: string) {
     return request<VerifyOtpResponse>('/auth/otp/verify', {
       method: 'POST',
-      body: JSON.stringify({ countryCode, mobileNumber, otpCode }),
+      body: JSON.stringify({ countryCode, mobileNumber, otpCode, otpToken }),
     });
   },
   login(email: string, password: string) {
@@ -64,12 +64,15 @@ export const api = {
       gender: 'male' | 'female';
       dateOfBirth: string;
       heightCm?: number;
-      physicalStatus?: 'normal' | 'physically_challenged';
+      weightKg?: number;
+      physicalStatus?: 'normal' | 'physicallyChallenged';
       maritalStatus?:
-        | 'never_married'
+        | 'neverMarried'
         | 'widower'
-        | 'awaiting_divorce'
+        | 'awaitingDivorce'
         | 'divorced';
+      eatingHabits?: 'vegetarian' | 'nonVegetarian' | 'eggetarian';
+      residentStatus?: string;
     },
   ) {
     return request<ProfileResponse>('/profiles/step-1', {

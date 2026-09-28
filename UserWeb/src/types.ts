@@ -23,6 +23,7 @@ export interface RegisterResponse {
   userId: string;
   mobile: string;
   otpExpiresAt: string;
+  otpToken?: string;
   otpCode?: string;
 }
 

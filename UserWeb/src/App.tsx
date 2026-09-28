@@ -3,11 +3,10 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { api } from './api';
 import type { LoginResponse, ProfileResponse, RegisterResponse } from './types';
 import { LandingPage } from './pages/LandingPage';
-import { RegisterPage } from './pages/RegisterPage';
 import { OtpPage } from './pages/OtpPage';
 import { LoginPage } from './pages/LoginPage';
 import { PendingPage } from './pages/PendingPage';
-import { WizardPage } from './pages/WizardPage';
+import { WizardPage } from './pages/RegisterPage';
 
 interface OtpContext {
   countryCode: string;
@@ -69,7 +68,6 @@ function AppRouter() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
-      <Route path="/register" element={<RegisterPage onRegistered={setOtpContext} />} />
       <Route
         path="/otp"
         element={<OtpPage otpContext={otpContext} onVerified={handleAuth} />}
@@ -79,7 +77,7 @@ function AppRouter() {
         element={accessToken ? <Navigate to="/app" replace /> : <LoginPage onLoggedIn={handleAuth} />}
       />
       <Route
-        path="/wizard"
+        path="/register"
         element={
           accessToken ? (
             <WizardPage token={accessToken} profile={profile} onProfileUpdate={setProfile} />
@@ -92,7 +90,7 @@ function AppRouter() {
         path="/pending"
         element={
           accessToken ? (
-            <PendingPage profile={profile} onLogout={logout} />
+            <PendingPage profile={profile} />
           ) : (
             <Navigate to="/login" replace />
           )
@@ -103,9 +101,9 @@ function AppRouter() {
         element={
           accessToken ? (
             isProfileComplete ? (
-              <PendingPage profile={profile} onLogout={logout} />
+              <PendingPage profile={profile} />
             ) : (
-              <Navigate to="/wizard" replace />
+              <Navigate to="/register" replace />
             )
           ) : (
             <Navigate to="/login" replace />
