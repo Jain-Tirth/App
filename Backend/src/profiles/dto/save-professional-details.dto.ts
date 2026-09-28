@@ -1,5 +1,13 @@
-import { EmploymentType } from '@prisma/client';
 import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+
+export enum EmploymentType {
+  private = 'private',
+  business = 'business',
+  defence = 'defence',
+  governmentPsu = 'governmentPsu',
+  notWorking = 'notWorking',
+  selfEmployed = 'selfEmployed',
+}
 
 export class SaveProfessionalDetailsDto {
   @IsOptional()

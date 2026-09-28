@@ -6,35 +6,45 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { AccountStatus, Prisma, User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
 import type { AuthenticatedUser } from '../auth/auth.types';
-import { PrismaService } from '../prisma/prisma.service';
+import { DatabaseService } from '../database/database.service';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { RejectProfileDto } from './dto/reject-profile.dto';
 
-type AdminProfileRecord = Prisma.ProfileGetPayload<{
-  include: {
-    user: true;
-  };
-}>;
+interface AdminUserRow {
+  id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  role: string;
+}
+
+interface DashboardStatsRow {
+  totalProfiles: number;
+  pendingApprovals: number;
+  activeUsers: number;
+  rejectedUsers: number;
+}
 
 @Injectable()
 export class AdminService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly db: DatabaseService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
 
   async login(dto: AdminLoginDto) {
     const email = dto.email.trim().toLowerCase();
-    const admin = await this.prisma.user.findUnique({
-      where: { email },
-    });
+    const result = await this.db.query<AdminUserRow>(
+      'SELECT "id", "name", "email", "passwordHash", "role" FROM "Users" WHERE "email" = $1 AND "role" = $2',
+      [email, 'admin'],
+    );
 
-    if (!admin || admin.role !== 'admin') {
+    const admin = result.rows[0];
+    if (!admin) {
       throw new UnauthorizedException('Invalid admin credentials.');
     }
 
@@ -71,97 +81,73 @@ export class AdminService {
   }
 
   async getDashboardStats() {
-    const [pendingProfiles, activeUsers, rejectedUsers, totalProfiles] =
-      await Promise.all([
-        this.prisma.profile.count({
-          where: { user: { accountStatus: AccountStatus.pending, role: 'user' } },
-        }),
-        this.prisma.user.count({
-          where: { accountStatus: AccountStatus.active, role: 'user' },
-        }),
-        this.prisma.user.count({
-          where: { accountStatus: AccountStatus.rejected, role: 'user' },
-        }),
-        this.prisma.profile.count({
-          where: { user: { role: 'user' } },
-        }),
-      ]);
+    const rawResult = await this.db.callFunctionSingle<{
+      fn_admin_get_dashboard_stats: DashboardStatsRow;
+    }>('fn_admin_get_dashboard_stats');
+
+    const stats = rawResult?.fn_admin_get_dashboard_stats;
 
     return {
-      pendingProfiles,
-      approvedProfiles: activeUsers,
-      rejectedProfiles: rejectedUsers,
-      totalProfiles,
+      pendingProfiles: Number(stats?.pendingApprovals ?? 0),
+      approvedProfiles: Number(stats?.activeUsers ?? 0),
+      rejectedProfiles: Number(stats?.rejectedUsers ?? 0),
+      totalProfiles: Number(stats?.totalProfiles ?? 0),
     };
   }
 
   async listPendingProfiles() {
-    const profiles = await this.prisma.profile.findMany({
-      where: {
-        user: {
-          accountStatus: AccountStatus.pending,
-          role: 'user',
-        },
-      },
-      include: { user: true },
-      orderBy: { createdAt: 'asc' },
-    });
+    const rawResult = await this.db.callFunctionSingle<{
+      fn_admin_list_pending_profiles: any[];
+    }>('fn_admin_list_pending_profiles');
+
+    const list = rawResult?.fn_admin_list_pending_profiles ?? [];
 
     return {
-      total: profiles.length,
-      profiles: profiles.map((profile) => this.toPendingProfileListItem(profile)),
+      total: list.length,
+      profiles: list,
     };
   }
 
   async getProfileForReview(userId: string) {
-    const profile = await this.getProfileByUserId(userId);
+    const rawResult = await this.db.callFunctionSingle<{
+      fn_get_profile_by_user_id: any;
+    }>('fn_get_profile_by_user_id', [userId]);
+
+    const payload = rawResult?.fn_get_profile_by_user_id;
+    if (!payload || !payload.profile) {
+      throw new NotFoundException('Profile not found.');
+    }
+
     return {
-      profile: this.toReviewProfileResponse(profile),
+      profile: {
+        ...payload.profile,
+        user: payload.user,
+      },
     };
   }
 
   async approveProfile(userId: string, adminUser: AuthenticatedUser) {
-    const profile = await this.getProfileByUserId(userId);
+    const profileData = await this.getProfileForReview(userId);
+    const user = profileData.profile.user;
 
-    if (profile.user.accountStatus === AccountStatus.active) {
+    if (user.accountStatus === 'active') {
       throw new BadRequestException('This profile is already approved.');
     }
 
-    if (profile.user.accountStatus === AccountStatus.blocked) {
+    if (user.accountStatus === 'blocked') {
       throw new BadRequestException('Blocked accounts cannot be approved.');
     }
 
-    const updatedProfile = await this.prisma.$transaction(async (tx) => {
-      const updatedUser = await tx.user.update({
-        where: { id: userId },
-        data: {
-          accountStatus: AccountStatus.active,
-          rejectionReason: null,
-        },
-      });
+    await this.db.callProcedure('sp_admin_approve_profile', [
+      userId,
+      adminUser.sub,
+    ]);
 
-      await tx.adminAuditLog.create({
-        data: {
-          adminId: adminUser.sub,
-          action: 'profile_approved',
-          targetId: userId,
-          notes: `Profile approved for ${updatedUser.email}`,
-        },
-      });
-
-      return tx.profile.findUnique({
-        where: { userId },
-        include: { user: true },
-      });
-    });
-
-    if (!updatedProfile) {
-      throw new NotFoundException('Profile not found after approval.');
-    }
+    const updatedProfile = await this.getProfileForReview(userId);
 
     return {
       message: 'Profile approved successfully.',
-      profile: this.toReviewProfileResponse(updatedProfile),
+      profile: updatedProfile.profile,
     };
   }
 
@@ -170,142 +156,24 @@ export class AdminService {
     dto: RejectProfileDto,
     adminUser: AuthenticatedUser,
   ) {
-    const profile = await this.getProfileByUserId(userId);
+    const profileData = await this.getProfileForReview(userId);
+    const user = profileData.profile.user;
 
-    if (profile.user.accountStatus === AccountStatus.blocked) {
+    if (user.accountStatus === 'blocked') {
       throw new BadRequestException('Blocked accounts cannot be rejected.');
     }
 
-    const updatedProfile = await this.prisma.$transaction(async (tx) => {
-      const updatedUser = await tx.user.update({
-        where: { id: userId },
-        data: {
-          accountStatus: AccountStatus.rejected,
-          rejectionReason: dto.reason.trim(),
-        },
-      });
+    await this.db.callProcedure('sp_admin_reject_profile', [
+      userId,
+      adminUser.sub,
+      dto.reason.trim(),
+    ]);
 
-      await tx.adminAuditLog.create({
-        data: {
-          adminId: adminUser.sub,
-          action: 'profile_rejected',
-          targetId: userId,
-          notes: dto.reason.trim(),
-        },
-      });
-
-      return tx.profile.findUnique({
-        where: { userId },
-        include: { user: true },
-      });
-    });
-
-    if (!updatedProfile) {
-      throw new NotFoundException('Profile not found after rejection.');
-    }
+    const updatedProfile = await this.getProfileForReview(userId);
 
     return {
       message: 'Profile rejected successfully.',
-      profile: this.toReviewProfileResponse(updatedProfile),
-    };
-  }
-
-  private async getProfileByUserId(userId: string) {
-    const profile = await this.prisma.profile.findUnique({
-      where: { userId },
-      include: { user: true },
-    });
-
-    if (!profile) {
-      throw new NotFoundException('Profile not found.');
-    }
-
-    return profile;
-  }
-
-  private toPendingProfileListItem(profile: AdminProfileRecord) {
-    return {
-      userId: profile.userId,
-      profileId: profile.id,
-      profileUid: profile.profileUid,
-      name: profile.user.name,
-      email: profile.user.email,
-      mobile: profile.user.mobile,
-      gender: profile.user.gender,
-      profileCreatedBy: profile.user.profileCreatedBy,
-      accountStatus: profile.user.accountStatus,
-      profileComplete: profile.profileComplete,
-      createdAt: profile.createdAt,
-    };
-  }
-
-  private toReviewProfileResponse(profile: AdminProfileRecord) {
-    return {
-      id: profile.id,
-      userId: profile.userId,
-      profileUid: profile.profileUid,
-      profileComplete: profile.profileComplete,
-      createdAt: profile.createdAt,
-      updatedAt: profile.updatedAt,
-      user: this.toReviewUserResponse(profile.user),
-      personalDetails: {
-        dateOfBirth: profile.dateOfBirth,
-        heightCm: profile.heightCm,
-        weightKg: profile.weightKg,
-        bodyType: profile.bodyType,
-        physicalStatus: profile.physicalStatus,
-        maritalStatus: profile.maritalStatus,
-        spokenLanguages: profile.spokenLanguages,
-        eatingHabits: profile.eatingHabits,
-        residentStatus: profile.residentStatus,
-      },
-      religiousDetails: {
-        religion: profile.religion,
-        caste: profile.caste,
-        subcaste: profile.subcaste,
-        openToAnySubcaste: profile.openToAnySubcaste,
-        gothra: profile.gothra,
-        dosh: profile.dosh,
-        manglik: profile.manglik,
-      },
-      locationDetails: {
-        country: profile.country,
-        state: profile.state,
-        city: profile.city,
-      },
-      professionalDetails: {
-        education: profile.education,
-        employmentType: profile.employmentType,
-        occupation: profile.occupation,
-        incomeCurrency: profile.incomeCurrency,
-        annualIncomeRange: profile.annualIncomeRange,
-      },
-      additionalDetails: {
-        familyStatus: profile.familyStatus,
-        aboutMyself: profile.aboutMyself,
-        lookingFor: profile.lookingFor,
-      },
-      verificationFlags: {
-        photoVerified: profile.photoVerified,
-        idVerified: profile.idVerified,
-      },
-    };
-  }
-
-  private toReviewUserResponse(user: User) {
-    return {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      mobile: user.mobile,
-      role: user.role,
-      gender: user.gender,
-      accountStatus: user.accountStatus,
-      rejectionReason: user.rejectionReason,
-      profileCreatedBy: user.profileCreatedBy,
-      mobileVerified: user.mobileVerified,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
+      profile: updatedProfile.profile,
     };
   }
 }

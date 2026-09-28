@@ -1,4 +1,4 @@
-import { IsString, Matches, Length } from 'class-validator';
+import { IsOptional, IsString, Length, Matches } from 'class-validator';
 
 export class VerifyOtpDto {
   @IsString()
@@ -13,4 +13,8 @@ export class VerifyOtpDto {
   @Length(4, 4)
   @Matches(/^\d{4}$/)
   otpCode!: string;
+
+  @IsOptional()
+  @IsString()
+  otpToken?: string;
 }

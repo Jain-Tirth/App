@@ -1,65 +1,102 @@
 import {
   BadRequestException,
-  HttpException,
-  HttpStatus,
   Injectable,
+  UnauthorizedException,
 } from '@nestjs/common';
-import { User } from '@prisma/client';
-import { randomInt } from 'crypto';
-import { PrismaService } from '../prisma/prisma.service';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt } from 'crypto';
 
-const OTP_EXPIRY_MINUTES = 10;
-const OTP_WINDOW_MINUTES = 10;
-const OTP_REQUEST_LIMIT = 5;
+export interface OtpIssueResult {
+  otpCode: string;
+  otpToken: string;
+  expiresAt: Date;
+}
+
+interface OtpPayload {
+  sub: string;
+  mobile: string;
+  encryptedCode: string;
+  iv: string;
+  exp: number;
+}
+
+const OTP_EXPIRY_MINUTES = 5;
 
 @Injectable()
 export class OtpService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly jwtSecret: string;
+  private readonly encryptionKey: Buffer;
 
-  async issueOtp(user: User): Promise<{ otpCode: string; expiresAt: Date }> {
-    const now = new Date();
-    const windowStartedAt = user.otpWindowStartedAt ?? now;
-    const windowExpiresAt = new Date(
-      windowStartedAt.getTime() + OTP_WINDOW_MINUTES * 60 * 1000,
-    );
-
-    const requestCount =
-      windowExpiresAt <= now ? 0 : (user.otpRequestCount ?? 0);
-
-    if (requestCount >= OTP_REQUEST_LIMIT) {
-      throw new HttpException(
-        'OTP request limit exceeded. Try again later.',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
-    const otpCode = randomInt(1000, 10000).toString();
-    const expiresAt = new Date(now.getTime() + OTP_EXPIRY_MINUTES * 60 * 1000);
-
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        otpCode,
-        otpExpiresAt: expiresAt,
-        otpRequestCount: requestCount + 1,
-        otpWindowStartedAt: requestCount === 0 ? now : windowStartedAt,
-      },
-    });
-
-    return { otpCode, expiresAt };
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+  ) {
+    this.jwtSecret =
+      this.configService.get<string>('JWT_SECRET') ||
+      'fallback-secret-key-at-least-32-chars';
+    // Generate a consistent 32-byte key for AES-256-CBC from JWT_SECRET
+    this.encryptionKey = createHash('sha256').update(this.jwtSecret).digest();
   }
 
-  assertValidOtp(user: User, otpCode: string): void {
-    if (!user.otpCode || !user.otpExpiresAt) {
-      throw new BadRequestException('No OTP has been generated for this user.');
+  async issueOtp(user: { id: string; mobile: string }): Promise<OtpIssueResult> {
+    const otpCode = randomInt(1000, 10000).toString();
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+    // Encrypt the OTP code using AES-256-CBC
+    const iv = randomBytes(16);
+    const cipher = createCipheriv('aes-256-cbc', this.encryptionKey, iv);
+    let encryptedCode = cipher.update(otpCode, 'utf8', 'hex');
+    encryptedCode += cipher.final('hex');
+
+    const payload: Omit<OtpPayload, 'exp'> = {
+      sub: user.id,
+      mobile: user.mobile,
+      encryptedCode,
+      iv: iv.toString('hex'),
+    };
+
+    const otpToken = this.jwtService.sign(payload, {
+      secret: this.jwtSecret,
+      expiresIn: `${OTP_EXPIRY_MINUTES}m`,
+    });
+
+    return { otpCode, otpToken, expiresAt };
+  }
+
+  verifyOtpToken(
+    otpToken: string,
+    expectedMobile: string,
+    enteredOtpCode: string,
+  ): string {
+    let payload: OtpPayload;
+    try {
+      payload = this.jwtService.verify<OtpPayload>(otpToken, {
+        secret: this.jwtSecret,
+      });
+    } catch {
+      throw new UnauthorizedException('OTP session token is invalid or has expired.');
     }
 
-    if (user.otpExpiresAt.getTime() < Date.now()) {
-      throw new BadRequestException('OTP has expired.');
+    if (payload.mobile !== expectedMobile) {
+      throw new BadRequestException('OTP token does not match the provided mobile number.');
     }
 
-    if (user.otpCode !== otpCode) {
-      throw new BadRequestException('Invalid OTP.');
+    try {
+      const iv = Buffer.from(payload.iv, 'hex');
+      const decipher = createDecipheriv('aes-256-cbc', this.encryptionKey, iv);
+      let decryptedCode = decipher.update(payload.encryptedCode, 'hex', 'utf8');
+      decryptedCode += decipher.final('utf8');
+
+      if (decryptedCode !== enteredOtpCode) {
+        throw new BadRequestException('Invalid OTP.');
+      }
+
+      return payload.sub;
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException('Failed to decrypt OTP verification token.');
     }
   }
 }

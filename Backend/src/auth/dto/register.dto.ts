@@ -1,4 +1,3 @@
-import { Gender, ProfileCreatedBy } from '@prisma/client';
 import {
   IsEmail,
   IsEnum,
@@ -7,6 +6,21 @@ import {
   Length,
   Matches,
 } from 'class-validator';
+
+export enum ProfileCreatedBy {
+  myself = 'myself',
+  son = 'son',
+  daughter = 'daughter',
+  brother = 'brother',
+  sister = 'sister',
+  friend = 'friend',
+  relative = 'relative',
+}
+
+export enum Gender {
+  male = 'male',
+  female = 'female',
+}
 
 export class RegisterDto {
   @IsString()

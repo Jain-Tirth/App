@@ -1,4 +1,14 @@
-import { AccountStatus, Role } from '@prisma/client';
+export type Role = 'user' | 'admin';
+export type AccountStatus = 'pending' | 'active' | 'rejected' | 'blocked';
+export type ProfileCreatedBy =
+  | 'myself'
+  | 'son'
+  | 'daughter'
+  | 'brother'
+  | 'sister'
+  | 'friend'
+  | 'relative';
+export type Gender = 'male' | 'female';
 
 export interface AuthTokenPayload {
   sub: string;
@@ -24,5 +34,5 @@ export interface AuthUserResponse {
   role: Role;
   accountStatus: AccountStatus;
   mobileVerified: boolean;
-  profileCreatedBy: string | null;
+  profileCreatedBy: ProfileCreatedBy | null;
 }

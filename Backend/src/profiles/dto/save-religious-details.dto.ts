@@ -1,4 +1,3 @@
-import { Dosh } from '@prisma/client';
 import {
   IsBoolean,
   IsEnum,
@@ -6,6 +5,12 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator';
+
+export enum Dosh {
+  no = 'no',
+  yes = 'yes',
+  dontKnow = 'dontKnow',
+}
 
 export class SaveReligiousDetailsDto {
   @IsOptional()
@@ -35,4 +40,8 @@ export class SaveReligiousDetailsDto {
   @IsOptional()
   @IsEnum(Dosh)
   dosh?: Dosh;
+
+  @IsOptional()
+  @IsEnum(Dosh)
+  manglik?: Dosh;
 }

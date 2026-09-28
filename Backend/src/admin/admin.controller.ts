@@ -1,5 +1,4 @@
 import { Controller, Get, Param, Patch, Body, Post, UseGuards } from '@nestjs/common';
-import { Role } from '@prisma/client';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -19,28 +18,28 @@ export class AdminController {
   }
 
   @UseGuards(AdminJwtAuthGuard, RolesGuard)
-  @Roles(Role.admin)
+  @Roles('admin')
   @Get('stats')
   getDashboardStats() {
     return this.adminService.getDashboardStats();
   }
 
   @UseGuards(AdminJwtAuthGuard, RolesGuard)
-  @Roles(Role.admin)
+  @Roles('admin')
   @Get('profiles/pending')
   listPendingProfiles() {
     return this.adminService.listPendingProfiles();
   }
 
   @UseGuards(AdminJwtAuthGuard, RolesGuard)
-  @Roles(Role.admin)
+  @Roles('admin')
   @Get('profiles/:userId')
   getProfileForReview(@Param('userId') userId: string) {
     return this.adminService.getProfileForReview(userId);
   }
 
   @UseGuards(AdminJwtAuthGuard, RolesGuard)
-  @Roles(Role.admin)
+  @Roles('admin')
   @Patch('profiles/:userId/approve')
   approveProfile(
     @Param('userId') userId: string,
@@ -50,7 +49,7 @@ export class AdminController {
   }
 
   @UseGuards(AdminJwtAuthGuard, RolesGuard)
-  @Roles(Role.admin)
+  @Roles('admin')
   @Patch('profiles/:userId/reject')
   rejectProfile(
     @Param('userId') userId: string,

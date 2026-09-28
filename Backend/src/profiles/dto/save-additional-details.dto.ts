@@ -1,10 +1,10 @@
-import { FamilyStatus } from '@prisma/client';
-import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class SaveAdditionalDetailsDto {
   @IsOptional()
-  @IsEnum(FamilyStatus)
-  familyStatus?: FamilyStatus;
+  @IsString()
+  @MaxLength(50)
+  familyStatus?: string;
 
   @IsOptional()
   @IsString()

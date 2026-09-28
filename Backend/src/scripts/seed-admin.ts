@@ -1,8 +1,7 @@
 import 'dotenv/config';
-import { PrismaClient, Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { Client } from 'pg';
 
-const prisma = new PrismaClient();
 const BCRYPT_ROUNDS = 12;
 
 async function main() {
@@ -16,36 +15,28 @@ async function main() {
     );
   }
 
-  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+  const connectionString = process.env.DATABASE_URL;
 
-  const admin = await prisma.user.upsert({
-    where: { email },
-    update: {
-      name,
-      passwordHash,
-      role: Role.admin,
-      mobileVerified: true,
-      emailVerified: true,
-    },
-    create: {
-      name,
-      email,
-      passwordHash,
-      mobile: `A${Date.now().toString().slice(-14)}`,
-      role: Role.admin,
-      mobileVerified: true,
-      emailVerified: true,
-    },
-  });
+  const client = new Client({ connectionString });
+  await client.connect();
 
-  console.log(`Admin user ready: ${admin.email} (${admin.id})`);
+  try {
+    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    const mobile = `A${Date.now().toString().slice(-14)}`;
+
+    const res = await client.query(
+      'SELECT fn_seed_admin_user($1, $2, $3, $4) AS id',
+      [name, email, passwordHash, mobile],
+    );
+
+    const adminId = res.rows[0]?.id;
+    console.log(`Admin user ready: ${email} (${adminId})`);
+  } finally {
+    await client.end();
+  }
 }
 
-main()
-  .catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
