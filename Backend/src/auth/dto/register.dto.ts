@@ -1,11 +1,20 @@
+import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsEmail,
   IsEnum,
+  IsIn,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Length,
   Matches,
+  ValidateNested,
 } from 'class-validator';
+import {
+  CONSENT_LANGUAGES,
+  type ConsentLanguage,
+} from '../../consents/consent.types';
 
 export enum ProfileCreatedBy {
   myself = 'myself',
@@ -20,6 +29,20 @@ export enum ProfileCreatedBy {
 export enum Gender {
   male = 'male',
   female = 'female',
+}
+
+export class RegisterConsentDto {
+  @IsString()
+  @IsNotEmpty()
+  code!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  version!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  documentHash!: string;
 }
 
 export class RegisterDto {
@@ -48,4 +71,14 @@ export class RegisterDto {
   @IsOptional()
   @IsEnum(Gender)
   gender?: Gender;
+
+  @IsOptional()
+  @IsIn([...CONSENT_LANGUAGES])
+  language?: ConsentLanguage;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RegisterConsentDto)
+  consents?: RegisterConsentDto[];
 }

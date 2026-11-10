@@ -1,0 +1,383 @@
+openapi: 3.1.0
+info:
+  title: Dhobi Matrimony API
+  version: 1.0.0
+  description: |
+    Contract for the Dhobi Matrimony member and admin API. The consent
+    endpoints record append-only, versioned evidence of what a member agreed
+    to, in which language and version, from which IP and device, and when the
+    agreement expires.
+servers:
+  - url: /api/v1
+tags:
+  - name: Consents
+    description: Versioned consent documents and append-only consent records
+  - name: Auth
+    description: Registration, OTP and sessions
+security:
+  - bearerAuth: []
+paths:
+  /consents/current:
+    get:
+      tags: [Consents]
+      summary: Current consent documents for the authenticated member
+      description: |
+        Returns every active consent document. Text is served in the requested
+        language (query parameter, then Accept-Language) and falls back to
+        English when a translation is missing. The latest record for each code
+        is included so the client can show whether consent is current, expired
+        or requires re-consent.
+      parameters:
+        - name: language
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ConsentLanguage'
+      responses:
+        '200':
+          description: Active consent documents and the member's latest record per code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentConsentsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /consents:
+    get:
+      tags: [Consents]
+      summary: The member's own consent records, newest first
+      responses:
+        '200':
+          description: Append-only consent history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentRecordsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Consents]
+      summary: Record acceptance of the currently active consent document
+      description: |
+        Writes one append-only record with the member id and name, the exact
+        text served for the document version and language, the client IP and
+        user agent, the grant time, an expiry exactly 24 months later and the
+        source. A version or document hash that does not match the active
+        document is rejected and no record is written.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordConsentRequest'
+      responses:
+        '201':
+          description: The stored consent record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentRecord'
+        '400':
+          $ref: '#/components/responses/ConsentError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /consents/renew:
+    post:
+      tags: [Consents]
+      summary: Re-consent after the 24-month expiry
+      description: |
+        Writes a new append-only record with a fresh grant time and expiry. The
+        earlier record is left unchanged. The request and response bodies are
+        identical to POST /consents; the stored source is `renewal`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordConsentRequest'
+      responses:
+        '201':
+          description: The new consent record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentRecord'
+        '400':
+          $ref: '#/components/responses/ConsentError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/register:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Start registration and record the required consents
+      description: |
+        Requires the terms, privacy and id_processing consents. When any is
+        missing or stale the request fails with the shared error envelope and
+        the details list the missing consent codes; no account is created. A
+        successful registration writes one consent record per accepted code.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Registration started; an OTP is issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          description: Validation failure or missing/stale required consents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: An account already exists with these details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Unauthorized:
+      description: Missing or invalid access token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ConsentError:
+      description: Unknown document, stale version/hash or missing required consent
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    ConsentLanguage:
+      type: string
+      enum: [en, hi, gu]
+      default: en
+    ConsentInput:
+      type: object
+      required: [code, version, documentHash]
+      properties:
+        code:
+          type: string
+          example: terms
+        version:
+          type: string
+          example: '1.0'
+        documentHash:
+          type: string
+          description: SHA-256 hash of the active document
+          example: 6f1c2e9a5b7d4f3e8a0c2b1d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f
+    RecordConsentRequest:
+      allOf:
+        - $ref: '#/components/schemas/ConsentInput'
+        - type: object
+          properties:
+            language:
+              $ref: '#/components/schemas/ConsentLanguage'
+    ConsentDocument:
+      type: object
+      required: [code, version, hash, effectiveAt]
+      properties:
+        code:
+          type: string
+        version:
+          type: string
+        hash:
+          type: string
+        effectiveAt:
+          type: string
+          format: date-time
+    CurrentConsent:
+      allOf:
+        - $ref: '#/components/schemas/ConsentDocument'
+        - type: object
+          required: [text, accepted, expired, requiresReconsent]
+          properties:
+            text:
+              type: string
+              description: Exact text served in the requested language
+            accepted:
+              type: boolean
+              description: Whether the member has any record for this code
+            grantedAt:
+              type: [string, 'null']
+              format: date-time
+            expiresAt:
+              type: [string, 'null']
+              format: date-time
+            expired:
+              type: boolean
+              description: True when the latest record's expiresAt has passed
+            requiresReconsent:
+              type: boolean
+              description: True when there is no record, the record expired, or a newer document version is active
+    CurrentConsentsResponse:
+      type: object
+      required: [language, consents]
+      properties:
+        language:
+          type: string
+          enum: [en, hi, gu]
+        consents:
+          type: array
+          items:
+            $ref: '#/components/schemas/CurrentConsent'
+    ConsentRecord:
+      type: object
+      required:
+        - id
+        - userId
+        - userName
+        - code
+        - version
+        - documentHash
+        - textSnapshot
+        - language
+        - ip
+        - userAgent
+        - grantedAt
+        - expiresAt
+        - source
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        userName:
+          type: string
+        code:
+          type: string
+        version:
+          type: string
+        documentHash:
+          type: string
+        textSnapshot:
+          type: string
+          description: Exact text served for this version and language
+        language:
+          $ref: '#/components/schemas/ConsentLanguage'
+        ip:
+          type: string
+        userAgent:
+          type: string
+        grantedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          description: Exactly 24 calendar months after grantedAt
+        revokedAt:
+          type: [string, 'null']
+          format: date-time
+        source:
+          type: string
+          enum: [registration, api, renewal]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ConsentRecordsResponse:
+      type: object
+      required: [total, records]
+      properties:
+        total:
+          type: integer
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConsentRecord'
+    ErrorEnvelope:
+      type: object
+      required: [code, message, details, requestId]
+      properties:
+        code:
+          type: string
+          example: CONSENT_REQUIRED
+        message:
+          type: string
+        details:
+          description: Machine-readable error details; for missing consents this is `{ "missingConsents": ["terms"] }`
+          oneOf:
+            - type: object
+            - type: array
+            - type: 'null'
+        requestId:
+          type: string
+    RegisterRequest:
+      type: object
+      required:
+        - fullName
+        - email
+        - password
+        - countryCode
+        - mobileNumber
+        - profileCreatedBy
+        - consents
+      properties:
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 100
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+          maxLength: 20
+        countryCode:
+          type: string
+          example: '+91'
+        mobileNumber:
+          type: string
+          example: '9876543210'
+        profileCreatedBy:
+          type: string
+          enum: [myself, son, daughter, brother, sister, friend, relative]
+        gender:
+          type: string
+          enum: [male, female]
+        language:
+          $ref: '#/components/schemas/ConsentLanguage'
+        consents:
+          type: array
+          minItems: 3
+          description: Must contain current terms, privacy and id_processing consents
+          items:
+            $ref: '#/components/schemas/ConsentInput'
+    RegisterResponse:
+      type: object
+      required: [message, userId, mobile, otpToken, otpExpiresAt]
+      properties:
+        message:
+          type: string
+        userId:
+          type: string
+          format: uuid
+        mobile:
+          type: string
+        otpToken:
+          type: string
+        otpExpiresAt:
+          type: string
+          format: date-time
+        otpCode:
+          type: string
+          description: Only present outside production

@@ -1,4 +1,6 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
+import { getClientRequestContext } from '../common/request-context';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { LoginDto } from './dto/login.dto';
@@ -14,8 +16,11 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  register(@Body() registerDto: RegisterDto) {
-    return this.authService.register(registerDto);
+  register(@Body() registerDto: RegisterDto, @Req() request: Request) {
+    return this.authService.register(
+      registerDto,
+      getClientRequestContext(request, registerDto.language),
+    );
   }
 
   @Post('otp/resend')

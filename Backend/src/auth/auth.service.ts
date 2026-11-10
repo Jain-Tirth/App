@@ -9,6 +9,8 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
+import type { ClientRequestContext } from '../common/request-context';
+import { ConsentsService } from '../consents/consents.service';
 import { DatabaseService } from '../database/database.service';
 import { AuthTokens, AuthUserResponse, AuthenticatedUser, Role, AccountStatus, ProfileCreatedBy, Gender } from './auth.types';
 import { LoginDto } from './dto/login.dto';
@@ -43,9 +45,18 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly otpService: OtpService,
+    private readonly consentsService: ConsentsService,
   ) {}
 
-  async register(registerDto: RegisterDto) {
+  async register(
+    registerDto: RegisterDto,
+    context: ClientRequestContext = { ip: '', userAgent: '' },
+  ) {
+    const acceptedConsents =
+      await this.consentsService.validateRegistrationConsents(
+        registerDto.consents ?? [],
+      );
+
     const email = registerDto.email.trim().toLowerCase();
     const mobile = this.normalizeMobile(
       registerDto.countryCode,
@@ -70,6 +81,15 @@ export class AuthService {
       }
       throw error;
     }
+
+    await this.consentsService.recordRegistrationConsents(
+      { id: user.id, name: user.name },
+      acceptedConsents,
+      {
+        ...context,
+        language: registerDto.language ?? context.language,
+      },
+    );
 
     const otp = await this.otpService.issueOtp(user);
 
