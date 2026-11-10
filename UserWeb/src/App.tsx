@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { api } from './api';
 import type { LoginResponse, ProfileResponse, RegisterResponse } from './types';
@@ -7,6 +7,7 @@ import { OtpPage } from './pages/OtpPage';
 import { LoginPage } from './pages/LoginPage';
 import { PendingPage } from './pages/PendingPage';
 import { WizardPage } from './pages/RegisterPage';
+import { AppPage } from './pages/AppPage';
 
 interface OtpContext {
   countryCode: string;
@@ -20,33 +21,36 @@ function AppRouter() {
   const [accessToken, setAccessToken] = useState<string | null>(
     localStorage.getItem('user_access_token'),
   );
-  const [refreshToken, setRefreshToken] = useState<string | null>(
+  const [, setRefreshToken] = useState<string | null>(
     localStorage.getItem('user_refresh_token'),
   );
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
-  const [otpContext, setOtpContext] = useState<OtpContext | null>(null);
+  const [loadingInitial, setLoadingInitial] = useState(Boolean(accessToken));
+  const [otpContext] = useState<OtpContext | null>(null);
+
+  const loadProfile = useCallback(async (token: string) => {
+    try {
+      const response = await api.getMyProfile(token);
+      setProfile(response);
+    } catch {
+      localStorage.removeItem('user_access_token');
+      localStorage.removeItem('user_refresh_token');
+      setAccessToken(null);
+      setRefreshToken(null);
+      setProfile(null);
+    } finally {
+      setLoadingInitial(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function loadProfile() {
-      if (!accessToken) {
-        setProfile(null);
-        return;
-      }
-
-      try {
-        const response = await api.getMyProfile(accessToken);
-        setProfile(response);
-      } catch {
-        localStorage.removeItem('user_access_token');
-        localStorage.removeItem('user_refresh_token');
-        setAccessToken(null);
-        setRefreshToken(null);
-        setProfile(null);
-      }
+    if (accessToken) {
+      void loadProfile(accessToken);
+    } else {
+      setLoadingInitial(false);
+      setProfile(null);
     }
-
-    void loadProfile();
-  }, [accessToken]);
+  }, [accessToken, loadProfile]);
 
   function handleAuth(response: LoginResponse) {
     localStorage.setItem('user_access_token', response.tokens.accessToken);
@@ -63,7 +67,23 @@ function AppRouter() {
     setProfile(null);
   }
 
-  const isProfileComplete = Boolean(profile?.profile) && profile?.completion.completedSteps === 5;
+  const accountStatus = profile?.profile?.user?.accountStatus;
+  const isApproved = accountStatus === 'active';
+  const isProfileComplete =
+    Boolean(profile?.profile) && (profile?.completion?.completedSteps ?? 0) >= 5;
+
+  if (loadingInitial) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-brand-canvas">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-3 border-brand-primary border-t-transparent" />
+          <span className="text-xs font-semibold text-brand-muted tracking-wider uppercase">
+            Loading Dhobi Matrimony...
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Routes>
@@ -74,13 +94,29 @@ function AppRouter() {
       />
       <Route
         path="/login"
-        element={accessToken ? <Navigate to="/app" replace /> : <LoginPage onLoggedIn={handleAuth} />}
+        element={
+          accessToken ? (
+            isApproved ? (
+              <Navigate to="/app" replace />
+            ) : isProfileComplete ? (
+              <Navigate to="/pending" replace />
+            ) : (
+              <Navigate to="/register" replace />
+            )
+          ) : (
+            <LoginPage onLoggedIn={handleAuth} />
+          )
+        }
       />
       <Route
         path="/register"
         element={
           accessToken ? (
-            <WizardPage token={accessToken} profile={profile} onProfileUpdate={setProfile} />
+            <WizardPage
+              token={accessToken}
+              profile={profile}
+              onProfileUpdate={setProfile}
+            />
           ) : (
             <Navigate to="/login" replace />
           )
@@ -90,7 +126,16 @@ function AppRouter() {
         path="/pending"
         element={
           accessToken ? (
-            <PendingPage profile={profile} />
+            isApproved ? (
+              <Navigate to="/app" replace />
+            ) : (
+              <PendingPage
+                token={accessToken}
+                profile={profile}
+                onProfileUpdate={setProfile}
+                onLogout={logout}
+              />
+            )
           ) : (
             <Navigate to="/login" replace />
           )
@@ -100,8 +145,15 @@ function AppRouter() {
         path="/app"
         element={
           accessToken ? (
-            isProfileComplete ? (
-              <PendingPage profile={profile} />
+            isApproved ? (
+              <AppPage
+                token={accessToken}
+                profile={profile}
+                onLogout={logout}
+                onProfileUpdate={setProfile}
+              />
+            ) : isProfileComplete ? (
+              <Navigate to="/pending" replace />
             ) : (
               <Navigate to="/register" replace />
             )

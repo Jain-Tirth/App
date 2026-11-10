@@ -19,6 +19,11 @@ export class ProfilesController {
     return this.profilesService.getMyProfile(user);
   }
 
+  @Get('matches')
+  getActiveMatches(@CurrentUser() user: AuthenticatedUser) {
+    return this.profilesService.getActiveMatches(user);
+  }
+
   @Put('step-1')
   savePersonalDetails(
     @CurrentUser() user: AuthenticatedUser,

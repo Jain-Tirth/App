@@ -22,6 +22,7 @@ import {
   ArrowRight,
   Shield,
   RefreshCw,
+  Check,
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -35,6 +36,7 @@ export function Dashboard({ token, adminName, onLogout }: DashboardProps) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [profiles, setProfiles] = useState<PendingProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   async function loadData() {
@@ -57,6 +59,19 @@ export function Dashboard({ token, adminName, onLogout }: DashboardProps) {
   useEffect(() => {
     void loadData();
   }, [token]);
+
+  async function quickApprove(userId: string) {
+    setApprovingId(userId);
+    setError('');
+    try {
+      await api.approveProfile(token, userId);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to approve profile');
+    } finally {
+      setApprovingId(null);
+    }
+  }
 
   const statItems = [
     {
@@ -195,12 +210,12 @@ export function Dashboard({ token, adminName, onLogout }: DashboardProps) {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[30%]">Applicant</TableHead>
+                    <TableHead className="w-[28%]">Applicant</TableHead>
                     <TableHead>Profile UID</TableHead>
                     <TableHead>Gender</TableHead>
                     <TableHead>Created By</TableHead>
                     <TableHead>Completeness</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -239,15 +254,27 @@ export function Dashboard({ token, adminName, onLogout }: DashboardProps) {
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => navigate(`/profiles/${profile.userId}`)}
-                          className="gap-1 hover:bg-white hover:text-black"
-                        >
-                          <span>Review</span>
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="default"
+                            disabled={approvingId === profile.userId}
+                            onClick={() => void quickApprove(profile.userId)}
+                            className="gap-1 text-xs bg-white text-black hover:bg-neutral-200"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            <span>{approvingId === profile.userId ? 'Approving...' : 'Approve'}</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => navigate(`/profiles/${profile.userId}`)}
+                            className="gap-1 hover:bg-white hover:text-black text-xs"
+                          >
+                            <span>Review</span>
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

@@ -14,4 +14,4 @@ import { ProfilesModule } from './profiles/profiles.module';
     ProfilesModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }

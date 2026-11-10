@@ -1,5 +1,6 @@
 import type {
   LoginResponse,
+  MatchProfile,
   ProfileResponse,
   RegisterPayload,
   RegisterResponse,
@@ -57,6 +58,9 @@ export const api = {
   },
   getMyProfile(token: string) {
     return request<ProfileResponse>('/profiles/me', {}, token);
+  },
+  getMatches(token: string) {
+    return request<{ total: number; matches: MatchProfile[] }>('/profiles/matches', {}, token);
   },
   saveStep1(
     token: string,

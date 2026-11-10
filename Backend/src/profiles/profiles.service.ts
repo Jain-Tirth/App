@@ -75,6 +75,19 @@ export class ProfilesService {
     };
   }
 
+  async getActiveMatches(currentUser: AuthenticatedUser) {
+    const rawResult = await this.db.callFunctionSingle<{
+      fn_get_active_matches: any[];
+    }>('fn_get_active_matches', [currentUser.sub]);
+
+    const matches = rawResult?.fn_get_active_matches ?? [];
+
+    return {
+      total: matches.length,
+      matches,
+    };
+  }
+
   async savePersonalDetails(
     currentUser: AuthenticatedUser,
     dto: SavePersonalDetailsDto,

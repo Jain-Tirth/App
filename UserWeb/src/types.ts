@@ -67,6 +67,7 @@ export interface ProfileResponse {
       gender: string | null;
       profileCreatedBy: string | null;
       accountStatus: string;
+      rejectionReason?: string | null;
     };
     personalDetails: Record<string, unknown>;
     religiousDetails: Record<string, unknown>;
@@ -75,4 +76,28 @@ export interface ProfileResponse {
     additionalDetails: Record<string, unknown>;
   } | null;
   completion: ProfileCompletion;
+}
+
+export interface MatchProfile {
+  userId: string;
+  profileUid: string;
+  name: string;
+  gender: string;
+  dateOfBirth: string | null;
+  heightCm: number | null;
+  maritalStatus: string | null;
+  religion: string | null;
+  caste: string | null;
+  subcaste: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  education: string | null;
+  occupation: string | null;
+  employmentType: string | null;
+  annualIncomeRange: string | null;
+  familyStatus: string | null;
+  aboutMyself: string | null;
+  lookingFor: string | null;
+  photoVerified: boolean;
 }
