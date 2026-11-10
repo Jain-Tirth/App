@@ -5,4 +5,65 @@ dist/
 .env
 **/.env
 **/.env.*
-!**/.env.example
+!**/.env.example
+
+# Local agent-loop state and generated knowledge graph — never commit
+.loop/
+graphify-out/
+.codebase-memory/
+
+# Legacy planning docs — kept on disk, not tracked
+docs/superpowers/
+
+# Local OpenCode project config — never publish
+opencode.json
+
+# Local planning documents — kept on disk, not tracked
+Dhobi_Matrimony_Complete_Plan.md
+Dhobi_Matrimony_Engineering_Blueprint_v3.md
+implementation_plan.md
+
+# Media and binary document assets — kept on disk, not tracked
+favicon_io/
+*.pdf
+*.jpeg
+*.jpg
+*.png
+*.gif
+*.webp
+*.bmp
+*.tif
+*.tiff
+*.ico
+*.svg
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.mp3
+*.wav
+*.ogg
+*.flac
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.ppt
+*.pptx
+*.odt
+*.ods
+*.odp
+*.zip
+*.rar
+*.7z
+
+# PWA runtime assets — required in the repository (exceptions to the media rules)
+!UserWeb/public/android-chrome-192x192.png
+!UserWeb/public/android-chrome-512x512.png
+!UserWeb/public/apple-touch-icon.png
+!UserWeb/public/favicon-16x16.png
+!UserWeb/public/favicon-32x32.png
+!UserWeb/public/favicon.ico
+!UserWeb/public/hero-wedding.jpg
+!UserWeb/public/logo-full.jpeg
