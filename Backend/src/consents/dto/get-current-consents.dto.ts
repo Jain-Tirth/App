@@ -1,11 +1,3 @@
-import { IsIn, IsOptional } from 'class-validator';
-import {
-  CONSENT_LANGUAGES,
-  type ConsentLanguage,
-} from '../consent.types';
+import { ConsentLanguageQueryDto } from './consent-language-query.dto';
 
-export class GetCurrentConsentsQueryDto {
-  @IsOptional()
-  @IsIn([...CONSENT_LANGUAGES])
-  language?: ConsentLanguage;
-}
+export class GetCurrentConsentsQueryDto extends ConsentLanguageQueryDto {}

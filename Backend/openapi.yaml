@@ -17,6 +17,37 @@ tags:
 security:
   - bearerAuth: []
 paths:
+  /consents/documents:
+    get:
+      tags: [Consents]
+      security: []
+      summary: Active consent documents for pre-registration clients
+      description: |
+        Public. Returns every active consent document with the `code`, `version`
+        and `hash` that POST /auth/register requires, plus the exact text served
+        in the requested language. Language resolution matches
+        GET /consents/current: query parameter, then Accept-Language, then
+        English, with a per-document fallback to English. No member data is
+        exposed.
+      parameters:
+        - name: language
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ConsentLanguage'
+      responses:
+        '200':
+          description: Active consent documents in the resolved language
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentDocumentsResponse'
+        '400':
+          description: Unsupported explicit language value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   /consents/current:
     get:
       tags: [Consents]
@@ -234,6 +265,26 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CurrentConsent'
+    ConsentDocumentSummary:
+      allOf:
+        - $ref: '#/components/schemas/ConsentDocument'
+        - type: object
+          required: [text]
+          properties:
+            text:
+              type: string
+              description: Exact text served in the requested language
+    ConsentDocumentsResponse:
+      type: object
+      required: [language, documents]
+      properties:
+        language:
+          type: string
+          enum: [en, hi, gu]
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConsentDocumentSummary'
     ConsentRecord:
       type: object
       required:

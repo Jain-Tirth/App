@@ -78,9 +78,9 @@ class FakeConsentRepository implements ConsentRepository {
     code: string,
   ): Promise<ConsentRecord | null> {
     return (
-      this.records.find(
-        (record) => record.userId === userId && record.code === code,
-      ) ?? null
+      this.records
+        .filter((record) => record.userId === userId && record.code === code)
+        .sort((a, b) => b.grantedAt.getTime() - a.grantedAt.getTime())[0] ?? null
     );
   }
 
@@ -241,6 +241,96 @@ describe('ConsentsService', () => {
     ]);
     expect(records.every((record) => record.source === 'registration')).toBe(
       true,
+    );
+  });
+
+  it('serves every active document with its version and hash to pre-auth clients', async () => {
+    repository.documents = [
+      document(),
+      document({ id: 'privacy', code: 'privacy', hash: 'b'.repeat(64) }),
+    ];
+
+    const result = await service.getActiveConsentDocuments('hi');
+
+    expect(result.language).toBe('hi');
+    expect(result.documents).toEqual([
+      {
+        code: 'terms',
+        version: '1.0',
+        hash: 'a'.repeat(64),
+        effectiveAt: new Date('2026-11-01T00:00:00.000Z'),
+        text: TERMS_HI,
+      },
+      {
+        code: 'privacy',
+        version: '1.0',
+        hash: 'b'.repeat(64),
+        effectiveAt: new Date('2026-11-01T00:00:00.000Z'),
+        text: TERMS_HI,
+      },
+    ]);
+  });
+
+  it('falls back to English text per document when the translation is missing', async () => {
+    repository.documents = [document({ translations: { en: TERMS_EN } })];
+
+    const result = await service.getActiveConsentDocuments('gu');
+
+    expect(result.language).toBe('gu');
+    expect(result.documents[0].text).toBe(TERMS_EN);
+  });
+
+  it('reports English for an unsupported language on the documents endpoint', async () => {
+    const result = await service.getActiveConsentDocuments('fr');
+
+    expect(result.language).toBe('en');
+    expect(result.documents[0].text).toBe(TERMS_EN);
+  });
+
+  it('reports the latest record per code on the current endpoint', async () => {
+    repository.records = [
+      storedRecord({
+        userId: 'user-1',
+        userName: 'Asha Patel',
+        code: 'terms',
+        version: '1.0',
+        documentHash: 'a'.repeat(64),
+        textSnapshot: TERMS_EN,
+        language: 'en',
+        ip: '',
+        userAgent: '',
+        grantedAt: new Date('2024-10-01T00:00:00.000Z'),
+        expiresAt: new Date('2026-10-01T00:00:00.000Z'),
+        source: 'api',
+      }),
+      storedRecord(
+        {
+          userId: 'user-1',
+          userName: 'Asha Patel',
+          code: 'terms',
+          version: '1.0',
+          documentHash: 'a'.repeat(64),
+          textSnapshot: TERMS_EN,
+          language: 'en',
+          ip: '',
+          userAgent: '',
+          grantedAt: new Date('2026-10-02T00:00:00.000Z'),
+          expiresAt: new Date('2028-10-02T00:00:00.000Z'),
+          source: 'renewal',
+        },
+        1,
+      ),
+    ];
+
+    const result = await service.getCurrentConsents('user-1', 'en');
+
+    expect(result.consents[0]).toMatchObject({
+      accepted: true,
+      expired: false,
+      requiresReconsent: false,
+    });
+    expect(result.consents[0].grantedAt?.toISOString()).toBe(
+      '2026-10-02T00:00:00.000Z',
     );
   });
 

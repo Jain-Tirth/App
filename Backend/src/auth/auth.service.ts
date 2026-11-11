@@ -66,30 +66,42 @@ export class AuthService {
 
     let user: DbUserRow;
     try {
-      const rows = await this.db.callFunction<DbUserRow>('fn_register_user', [
-        registerDto.fullName.trim(),
-        email,
-        passwordHash,
-        mobile,
-        registerDto.profileCreatedBy,
-        registerDto.gender ?? null,
-      ]);
-      user = rows[0];
+      user = await this.db.transaction(async (client) => {
+        const rows = await this.db.callFunction<DbUserRow>(
+          'fn_register_user',
+          [
+            registerDto.fullName.trim(),
+            email,
+            passwordHash,
+            mobile,
+            registerDto.profileCreatedBy,
+            registerDto.gender ?? null,
+          ],
+          client,
+        );
+        const createdUser = rows[0];
+
+        // The account and its consent evidence commit together: a failure here
+        // rolls the user row back, so a retry cannot hit USER_EXISTS on an
+        // account that has no consent records.
+        await this.consentsService.recordRegistrationConsents(
+          { id: createdUser.id, name: createdUser.name },
+          acceptedConsents,
+          {
+            ...context,
+            language: registerDto.language ?? context.language,
+          },
+          client,
+        );
+
+        return createdUser;
+      });
     } catch (error: any) {
       if (error?.message?.includes('USER_EXISTS')) {
         throw new ConflictException('An account already exists with these details.');
       }
       throw error;
     }
-
-    await this.consentsService.recordRegistrationConsents(
-      { id: user.id, name: user.name },
-      acceptedConsents,
-      {
-        ...context,
-        language: registerDto.language ?? context.language,
-      },
-    );
 
     const otp = await this.otpService.issueOtp(user);
 

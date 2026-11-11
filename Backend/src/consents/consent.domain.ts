@@ -4,6 +4,7 @@ import {
   DEFAULT_CONSENT_LANGUAGE,
   REQUIRED_CONSENT_CODES,
   type ConsentDocument,
+  type ConsentDocumentSummary,
   type ConsentInput,
   type ConsentLanguage,
   type ConsentRecord,
@@ -42,19 +43,21 @@ export function isExpired(expiresAt: Date | string, now: Date = new Date()): boo
   return new Date(expiresAt).getTime() <= now.getTime();
 }
 
+export function resolveResponseLanguage(
+  requestedLanguage: string | null | undefined,
+): ConsentLanguage {
+  return requestedLanguage && isConsentLanguage(requestedLanguage)
+    ? requestedLanguage
+    : DEFAULT_CONSENT_LANGUAGE;
+}
+
 export function resolveConsentLanguage(
   requestedLanguage: string | null | undefined,
   translations: Partial<Record<ConsentLanguage, string>>,
 ): ConsentLanguage {
-  if (
-    requestedLanguage &&
-    isConsentLanguage(requestedLanguage) &&
-    Boolean(translations[requestedLanguage])
-  ) {
-    return requestedLanguage;
-  }
+  const language = resolveResponseLanguage(requestedLanguage);
 
-  return DEFAULT_CONSENT_LANGUAGE;
+  return translations[language] ? language : DEFAULT_CONSENT_LANGUAGE;
 }
 
 export function getConsentText(
@@ -131,18 +134,15 @@ export function evaluateRequiredConsents(
   return { accepted, missingCodes, invalidCodes };
 }
 
-export function summarizeConsent(
+/**
+ * The public projection of a consent document: the five fields a client needs
+ * to display a document and submit its acceptance.
+ */
+export function summarizeDocument(
   document: ConsentDocument,
-  record: ConsentRecord | null,
   requestedLanguage: string | null | undefined,
-  now: Date,
-): CurrentConsent {
+): ConsentDocumentSummary {
   const { text } = getConsentText(document, requestedLanguage);
-  const expired = record ? isExpired(record.expiresAt, now) : false;
-  const versionIsCurrent =
-    !record ||
-    (record.version === document.version &&
-      record.documentHash.toLowerCase() === document.hash.toLowerCase());
 
   return {
     code: document.code,
@@ -150,6 +150,24 @@ export function summarizeConsent(
     hash: document.hash,
     effectiveAt: document.effectiveAt,
     text,
+  };
+}
+
+export function summarizeConsent(
+  document: ConsentDocument,
+  record: ConsentRecord | null,
+  requestedLanguage: string | null | undefined,
+  now: Date,
+): CurrentConsent {
+  const summary = summarizeDocument(document, requestedLanguage);
+  const expired = record ? isExpired(record.expiresAt, now) : false;
+  const versionIsCurrent =
+    !record ||
+    (record.version === document.version &&
+      record.documentHash.toLowerCase() === document.hash.toLowerCase());
+
+  return {
+    ...summary,
     accepted: Boolean(record),
     grantedAt: record?.grantedAt ?? null,
     expiresAt: record?.expiresAt ?? null,

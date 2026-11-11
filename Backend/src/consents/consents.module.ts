@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { CONSENT_REPOSITORY } from './consent.repository';
+import { ConsentDocumentsController } from './consent-documents.controller';
 import { ConsentsController } from './consents.controller';
 import { ConsentsService } from './consents.service';
 import { PostgresConsentRepository } from './postgres-consent.repository';
 
 @Module({
-  controllers: [ConsentsController],
+  controllers: [ConsentsController, ConsentDocumentsController],
   providers: [
     ConsentsService,
     {

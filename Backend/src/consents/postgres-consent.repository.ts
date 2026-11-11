@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
+import type { DatabaseClient } from '../database/database.types';
 import type { ConsentRepository } from './consent.repository';
 import type {
   ConsentDocument,
@@ -125,50 +126,63 @@ export class PostgresConsentRepository implements ConsentRepository {
 
   async insertRecord(
     input: CreateConsentRecordInput,
+    client?: DatabaseClient,
   ): Promise<ConsentRecord> {
-    const [record] = await this.insertRecords([input]);
+    const [record] = await this.insertRecords([input], client);
     return record;
   }
 
   async insertRecords(
     inputs: CreateConsentRecordInput[],
+    client?: DatabaseClient,
   ): Promise<ConsentRecord[]> {
     if (inputs.length === 0) {
       return [];
     }
 
-    return this.db.transaction(async (client) => {
-      const records: ConsentRecord[] = [];
+    if (client) {
+      return this.insertWithClient(client, inputs);
+    }
 
-      for (const input of inputs) {
-        const result = await client.query<RecordRow>(
-          `INSERT INTO "ConsentRecords" (
-             "userId", "userName", "code", "version", "documentHash",
-             "textSnapshot", "language", "ip", "userAgent", "grantedAt",
-             "expiresAt", "source"
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-           RETURNING ${RECORD_COLUMNS}`,
-          [
-            input.userId,
-            input.userName,
-            input.code,
-            input.version,
-            input.documentHash,
-            input.textSnapshot,
-            input.language,
-            input.ip,
-            input.userAgent,
-            input.grantedAt,
-            input.expiresAt,
-            input.source,
-          ],
-        );
+    return this.db.transaction((transactionClient) =>
+      this.insertWithClient(transactionClient, inputs),
+    );
+  }
 
-        records.push(this.mapRecord(result.rows[0]));
-      }
+  private async insertWithClient(
+    client: DatabaseClient,
+    inputs: CreateConsentRecordInput[],
+  ): Promise<ConsentRecord[]> {
+    const records: ConsentRecord[] = [];
 
-      return records;
-    });
+    for (const input of inputs) {
+      const result = await client.query(
+        `INSERT INTO "ConsentRecords" (
+           "userId", "userName", "code", "version", "documentHash",
+           "textSnapshot", "language", "ip", "userAgent", "grantedAt",
+           "expiresAt", "source"
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         RETURNING ${RECORD_COLUMNS}`,
+        [
+          input.userId,
+          input.userName,
+          input.code,
+          input.version,
+          input.documentHash,
+          input.textSnapshot,
+          input.language,
+          input.ip,
+          input.userAgent,
+          input.grantedAt,
+          input.expiresAt,
+          input.source,
+        ],
+      );
+
+      records.push(this.mapRecord(result.rows[0] as RecordRow));
+    }
+
+    return records;
   }
 
   private groupDocuments(rows: DocumentRow[]): ConsentDocument[] {

@@ -1,13 +1,15 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { ApiException } from '../common/api-error';
 import type { ClientRequestContext } from '../common/request-context';
+import type { DatabaseClient } from '../database/database.types';
 import {
   calculateExpiresAt,
   evaluateRequiredConsents,
   getConsentText,
-  isConsentLanguage,
   matchesActiveDocument,
+  resolveResponseLanguage,
   summarizeConsent,
+  summarizeDocument,
 } from './consent.domain';
 import {
   CONSENT_REPOSITORY,
@@ -15,7 +17,9 @@ import {
 } from './consent.repository';
 import type {
   ConsentDocument,
+  ConsentDocumentSummary,
   ConsentInput,
+  ConsentLanguage,
   ConsentRecord,
   ConsentRequestContext,
   CreateConsentRecordInput,
@@ -24,8 +28,13 @@ import type {
 } from './consent.types';
 
 export interface CurrentConsentsResult {
-  language: string;
+  language: ConsentLanguage;
   consents: CurrentConsent[];
+}
+
+export interface ConsentDocumentsResult {
+  language: ConsentLanguage;
+  documents: ConsentDocumentSummary[];
 }
 
 export interface ConsentHistoryResult {
@@ -44,34 +53,43 @@ export class ConsentsService {
     userId: string,
     requestedLanguage?: string,
   ): Promise<CurrentConsentsResult> {
-    const [documents, records] = await Promise.all([
-      this.repository.findActiveDocuments(),
-      this.repository.findRecordsByUser(userId),
-    ]);
-
-    const latestByCode = new Map<string, ConsentRecord>();
-    for (const record of records) {
-      if (!latestByCode.has(record.code)) {
-        latestByCode.set(record.code, record);
-      }
-    }
+    const documents = await this.repository.findActiveDocuments();
+    const latestRecords = await Promise.all(
+      documents.map((document) =>
+        this.repository.findLatestRecordByCode(userId, document.code),
+      ),
+    );
 
     const now = new Date();
-    const consents = documents.map((document) =>
+    const consents = documents.map((document, index) =>
       summarizeConsent(
         document,
-        latestByCode.get(document.code) ?? null,
+        latestRecords[index],
         requestedLanguage,
         now,
       ),
     );
 
     return {
-      language:
-        requestedLanguage && isConsentLanguage(requestedLanguage)
-          ? requestedLanguage
-          : 'en',
+      language: resolveResponseLanguage(requestedLanguage),
       consents,
+    };
+  }
+
+  /**
+   * The documents a pre-authentication registration client must display and
+   * accept. No member data is involved, so the route is public.
+   */
+  async getActiveConsentDocuments(
+    requestedLanguage?: string,
+  ): Promise<ConsentDocumentsResult> {
+    const documents = await this.repository.findActiveDocuments();
+
+    return {
+      language: resolveResponseLanguage(requestedLanguage),
+      documents: documents.map((document) =>
+        summarizeDocument(document, requestedLanguage),
+      ),
     };
   }
 
@@ -143,6 +161,7 @@ export class ConsentsService {
     user: { id: string; name: string },
     accepted: ValidatedConsent[],
     context: ClientRequestContext,
+    client?: DatabaseClient,
   ): Promise<ConsentRecord[]> {
     const records = accepted.map((item) =>
       this.buildRecord(user.id, user.name, item.document, {
@@ -151,7 +170,7 @@ export class ConsentsService {
       }),
     );
 
-    return this.repository.insertRecords(records);
+    return this.repository.insertRecords(records, client);
   }
 
   private async requireActiveDocument(

@@ -5,7 +5,8 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
+import { Pool, QueryResult, QueryResultRow } from 'pg';
+import type { DatabaseClient } from './database.types';
 
 @Injectable()
 export class DatabaseService implements OnModuleInit, OnModuleDestroy {
@@ -54,9 +55,16 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   async callFunction<T extends QueryResultRow = any>(
     funcName: string,
     params: any[] = [],
+    client?: DatabaseClient,
   ): Promise<T[]> {
     const placeholders = params.map((_, i) => `$${i + 1}`).join(', ');
     const sql = `SELECT * FROM ${funcName}(${placeholders})`;
+
+    if (client) {
+      const result = await client.query(sql, params);
+      return result.rows as T[];
+    }
+
     const result = await this.pool.query<T>(sql, params);
     return result.rows;
   }
@@ -64,8 +72,9 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   async callFunctionSingle<T extends QueryResultRow = any>(
     funcName: string,
     params: any[] = [],
+    client?: DatabaseClient,
   ): Promise<T | null> {
-    const rows = await this.callFunction<T>(funcName, params);
+    const rows = await this.callFunction<T>(funcName, params, client);
     return rows[0] ?? null;
   }
 
@@ -75,7 +84,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     await this.pool.query(sql, params);
   }
 
-  async transaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
+  async transaction<T>(callback: (client: DatabaseClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');

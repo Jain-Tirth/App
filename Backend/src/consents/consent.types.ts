@@ -76,15 +76,23 @@ export interface ConsentRequestContext {
   source: ConsentSource;
 }
 
-export interface CurrentConsent {
-  code: string;
-  version: string;
-  hash: string;
-  effectiveAt: Date;
-  text: string;
+export interface CurrentConsent extends ConsentDocumentSummary {
   accepted: boolean;
   grantedAt: Date | null;
   expiresAt: Date | null;
   expired: boolean;
   requiresReconsent: boolean;
+}
+
+/**
+ * The five fields that identify a consent document and serve its exact text.
+ * Used by both the authenticated current-consent summary and the public
+ * pre-registration document list.
+ */
+export interface ConsentDocumentSummary {
+  code: string;
+  version: string;
+  hash: string;
+  effectiveAt: Date;
+  text: string;
 }
