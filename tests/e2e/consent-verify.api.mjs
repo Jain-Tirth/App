@@ -824,11 +824,16 @@ export async function run({ baseUrl, database }) {
       `GET /consents/current with "Bearer not-a-jwt" -> ${garbage.status} code=${garbage.body?.code}`,
     );
 
+    // An explicit query value is a validated instruction: exactly 400.
+    // The `Accept-Language` header row below is the documented contrast (a
+    // header is a negotiation, so an unsupported value resolves to English).
     const badQuery = await request('GET', '/consents/current?language=xx', { token: tokenA });
     record(
       'EDGE-language',
-      badQuery.status === 400 || badQuery.status === 200,
-      `GET /consents/current?language=xx -> ${badQuery.status} code=${badQuery.body?.code ?? 'n/a'}; unsupported query value is ${badQuery.status === 400 ? 'rejected by the DTO (VALIDATION_ERROR)' : 'accepted'}. Accept-Language: xx-YY (header path) resolves to en by design.`,
+      badQuery.status === 400 && badQuery.body?.code === 'VALIDATION_ERROR',
+      `GET /consents/current?language=xx -> ${badQuery.status} code=${
+        badQuery.body?.code ?? 'n/a'
+      } (unsupported query value is rejected by the DTO; Accept-Language: xx-YY resolves to en by design — see EDGE-accept-language)`,
     );
 
     const badHeader = await request('GET', '/consents/current', {
