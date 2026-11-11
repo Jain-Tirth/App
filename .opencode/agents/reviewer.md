@@ -1,7 +1,7 @@
 ---
 description: Independently judges the work against SPEC.md, the story ACs, the engineering standards and the graphify report; decides PASS or REVISE. Writes only .loop/verdict.md.
 mode: subagent
-steps: 24
+steps: 40
 permissions:
   - { action: "*", resource: "*", effect: deny }
   - { action: read, resource: "*", effect: allow }

@@ -1,7 +1,7 @@
 ---
 description: Rebuilds the graphify knowledge graph after every coder run and writes .loop/graphify-report.md so the next coder and the reviewer work from current architecture.
 mode: subagent
-steps: 12
+steps: 24
 permissions:
   - { action: "*", resource: "*", effect: deny }
   - { action: read, resource: "*", effect: allow }

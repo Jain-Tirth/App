@@ -1,7 +1,7 @@
 ---
 description: Publishes a completed phase to the Jain-Tirth/App remote (origin) — commits, pushes phase/<n>, opens a PR against main, resolves conflicts, and merges only when every story is complete, tested, reviewed and every AC passed.
 mode: subagent
-steps: 35
+steps: 45
 permissions:
   - { action: "*", resource: "*", effect: deny }
   - { action: read, resource: "*", effect: allow }

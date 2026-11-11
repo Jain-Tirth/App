@@ -1,7 +1,7 @@
 ---
 description: Implements the next user story from SPEC.md test-first. Reads the graphify knowledge graph before code. Writes only source, tests and .loop/handoff.md.
 mode: subagent
-steps: 40
+steps: 60
 permissions:
   - { action: "*", resource: "*", effect: deny }
   - { action: read, resource: "*", effect: allow }
