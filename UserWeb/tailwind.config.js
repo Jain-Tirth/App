@@ -23,8 +23,10 @@ export default {
         },
       },
       fontFamily: {
-        serif: ['"Playfair Display"', 'Georgia', 'serif'],
-        sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+        // National Park is the only family the app uses. `serif` is kept as an
+        // alias so the existing display-heading utilities render it too.
+        sans: ['"National Park"', 'system-ui', 'sans-serif'],
+        serif: ['"National Park"', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
         soft: '0 10px 30px rgba(34, 28, 30, 0.06)',

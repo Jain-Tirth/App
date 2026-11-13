@@ -63,7 +63,7 @@ export function LandingPage() {
               {/* Main Headline */}
               <h1 className="mt-5 font-serif text-4xl font-bold tracking-tight text-brand-charcoal sm:text-5xl lg:text-6xl lg:leading-[1.15]">
                 Find Your Perfect <br className="hidden sm:inline" />
-                <span className="text-brand-primary italic">Life Partner</span>
+                <span className="text-brand-primary">Life Partner</span>
               </h1>
 
               {/* Subtitle */}
