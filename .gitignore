@@ -67,3 +67,6 @@ favicon_io/
 !UserWeb/public/favicon.ico
 !UserWeb/public/hero-wedding.jpg
 !UserWeb/public/logo-full.jpeg
+
+# Local claude code agent setup
+.claude/
