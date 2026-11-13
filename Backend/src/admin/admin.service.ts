@@ -4,11 +4,11 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { env } from '../config/env';
 import { DatabaseService } from '../database/database.service';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { RejectProfileDto } from './dto/reject-profile.dto';
@@ -33,7 +33,6 @@ export class AdminService {
   constructor(
     private readonly db: DatabaseService,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
   ) {}
 
   async login(dto: AdminLoginDto) {
@@ -60,11 +59,8 @@ export class AdminService {
         role: admin.role,
       },
       {
-        secret: this.configService.getOrThrow<string>('ADMIN_JWT_SECRET'),
-        expiresIn: this.configService.get<string>(
-          'ADMIN_JWT_EXPIRES_IN',
-          '12h',
-        ) as StringValue,
+        secret: env.admin.jwtSecret,
+        expiresIn: env.admin.jwtExpiresIn as StringValue,
       },
     );
 

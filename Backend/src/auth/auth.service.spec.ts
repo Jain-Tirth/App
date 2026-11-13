@@ -1,5 +1,4 @@
 import { ConflictException } from '@nestjs/common';
-import type { ConfigService } from '@nestjs/config';
 import type { JwtService } from '@nestjs/jwt';
 import type { ConsentsService } from '../consents/consents.service';
 import type { ValidatedConsent } from '../consents/consent.types';
@@ -159,7 +158,6 @@ describe('AuthService registration', () => {
     service = new AuthService(
       db as unknown as DatabaseService,
       {} as JwtService,
-      { get: () => 'test' } as unknown as ConfigService,
       otp as unknown as OtpService,
       consents as unknown as ConsentsService,
     );

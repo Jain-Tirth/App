@@ -3,9 +3,9 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt } from 'crypto';
+import { env } from '../config/env';
 
 export interface OtpIssueResult {
   otpCode: string;
@@ -28,13 +28,8 @@ export class OtpService {
   private readonly jwtSecret: string;
   private readonly encryptionKey: Buffer;
 
-  constructor(
-    private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
-  ) {
-    this.jwtSecret =
-      this.configService.get<string>('JWT_SECRET') ||
-      'fallback-secret-key-at-least-32-chars';
+  constructor(private readonly jwtService: JwtService) {
+    this.jwtSecret = env.jwt.secret;
     // Generate a consistent 32-byte key for AES-256-CBC from JWT_SECRET
     this.encryptionKey = createHash('sha256').update(this.jwtSecret).digest();
   }

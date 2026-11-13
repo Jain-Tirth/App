@@ -5,11 +5,11 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
 import type { ClientRequestContext } from '../common/request-context';
+import { env } from '../config/env';
 import { ConsentsService } from '../consents/consents.service';
 import { DatabaseService } from '../database/database.service';
 import { AuthTokens, AuthUserResponse, AuthenticatedUser, Role, AccountStatus, ProfileCreatedBy, Gender } from './auth.types';
@@ -43,7 +43,6 @@ export class AuthService {
   constructor(
     private readonly db: DatabaseService,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
     private readonly otpService: OtpService,
     private readonly consentsService: ConsentsService,
   ) {}
@@ -259,7 +258,7 @@ export class AuthService {
       payload = await this.jwtService.verifyAsync<AuthenticatedUser>(
         refreshTokenDto.refreshToken,
         {
-          secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+          secret: env.jwt.refreshSecret,
         },
       );
     } catch {
@@ -334,18 +333,12 @@ export class AuthService {
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
-        secret: this.configService.getOrThrow<string>('JWT_SECRET'),
-        expiresIn: this.configService.get<string>(
-          'JWT_EXPIRES_IN',
-          '7d',
-        ) as StringValue,
+        secret: env.jwt.secret,
+        expiresIn: env.jwt.expiresIn as StringValue,
       }),
       this.jwtService.signAsync(payload, {
-        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
-        expiresIn: this.configService.get<string>(
-          'JWT_REFRESH_EXPIRES_IN',
-          '30d',
-        ) as StringValue,
+        secret: env.jwt.refreshSecret,
+        expiresIn: env.jwt.refreshExpiresIn as StringValue,
       }),
     ]);
 
@@ -372,7 +365,7 @@ export class AuthService {
   }
 
   private includeOtpInResponse(): boolean {
-    return this.configService.get<string>('NODE_ENV') !== 'production';
+    return !env.isProduction;
   }
 
   private normalizeMobile(countryCode: string, mobileNumber: string): string {
