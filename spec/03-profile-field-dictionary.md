@@ -53,6 +53,9 @@ This is the authoritative field model for the member profile. It is derived from
 | `specialCases` | object | N | `thalassemia`: yes/no/unknown; `hiv`: yes/no/unknown; `challenged`: derived from physicalStatus | Match only | Free | Sensitive; hidden from public and search; explicit consent to display |
 | `profilePrompts` | array | C | 5 defined prompts; at least 3 answered | Public | Free | Each 40–200 chars |
 | `interestTags` | string[] | C | Taxonomy; 3–5 selected | Public | Free | Shown as chips |
+**Rules:**
+
+- If `age` is below 18 and 21 for woman and man respectively, show them message: Sorry, you must be 18year old or 21year old. Age in the message should be based on the gender selected by the user.
 
 ### Prompt definitions (seed data)
 
@@ -69,7 +72,7 @@ This is the authoritative field model for the member profile. It is derived from
 | Field | Type | Req | Options / format | Visibility | Edit | Notes |
 |---|---|---|---|---|---|---|
 | `religion` | string | Y | Taxonomy (Hindu default) | Public | Once | |
-| `community` | string | Y | Taxonomy (Dhobi, Rajaka, etc.) | Public | Once | Displayed as "Caste/Community" |
+| `community` | string | Y | Taxonomy (Dhobi) | Public | Once | Displayed as "Caste/Community" |
 | `subcaste` | string | C | Taxonomy; required unless "Don't know" | Public | Once | Dhobi/Rajaka sub-groups |
 | `openToAnySubcaste` | boolean | N | Default false | Public | Free | Suppresses sub-caste filtering |
 | `gothra` | string | N | Taxonomy + free text | Public | Once | |
@@ -87,8 +90,8 @@ This is the authoritative field model for the member profile. It is derived from
 
 | Field | Type | Req | Options / format | Visibility | Edit | Notes |
 |---|---|---|---|---|---|---|
-| `country` | string | Y | Taxonomy (frequently selected + all) | Public | Free | |
-| `state` | string | C | Taxonomy; required if country = India | Public | Free | |
+| `country` | string | Y | Taxonomy (all) | Public | Free | |
+| `state` | string | C | Taxonomy; required for any country | Public | Free | |
 | `city` | string | Y | Taxonomy + free text for non-India | Public | Free | |
 | `citizenship` | string | N | Taxonomy | Public | Free | NRI relevance |
 | `interestedSettlingAbroad` | enum | N | `yes`, `no`, `maybe` | Public | Free | |

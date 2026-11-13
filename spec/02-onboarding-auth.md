@@ -115,10 +115,10 @@
 | Rule | Value (default) |
 |---|---|
 | Expiry | 5 minutes |
-| Max verify attempts per code | 5 |
+| Max verify attempts per code | 3 |
 | Resend cooldown | 60 seconds |
-| Max resends per hour | 5 |
-| Max OTP requests per mobile per day | 10 |
+| Max resends per hour | 3 |
+| Max OTP requests per mobile per day | 5 |
 | Max OTP requests per IP per hour | 30 |
 | Lockout | 30 minutes after max attempts, then support path |
 | Code storage | Stateless signed token or hashed short-lived record; never plaintext in logs |
@@ -326,7 +326,7 @@ Critical events always have an SMS/email fallback because iOS web push requires 
 | Situation | Message and recovery |
 |---|---|
 | Network offline | "You're offline. Your changes are saved on this device and will sync when you're back." |
-| Server 5xx | "Something went wrong. Your draft is safe. Retry." |
+| Server 5xx | "Something went wrong. Your draft is safe. Retry after somewhile." |
 | Session expired | Silent refresh; if it fails, "Please log in again" with return-to-screen |
 | Duplicate save conflict | "This section was updated on another device. Review the latest version." |
 | Photo upload failed | Per-file retry; do not fail the whole section |

@@ -31,6 +31,7 @@
 | `spec/12-testing-strategy.md` | Test seams, what to test, prior art, environments, CI |
 | `spec/13-roadmap.md` | MVP / Phase 2 / Phase 3 sequencing, dependencies, release gates |
 | `spec/14-expo-migration.md` | Planned PWA → Expo React Native migration |
+| `spec/15-security-stories.md` | Threat model, 47 security stories (SEC-01 to SEC-47) with acceptance criteria, tests, gates and phase mapping |
 
 ---
 
@@ -349,6 +350,31 @@ The product is free to join and browse. Verified profiles are the default: no pr
 207. As the platform, I want a single automated release pipeline, so that every change is built, tested and deployable.
 208. As the product team, I want the domain and API layer isolated from the web UI, so that the later Expo app can reuse it without a rewrite.
 
+### Security
+
+The full story set with acceptance criteria is `spec/15-security-stories.md` (SEC-01 to SEC-47). The summary below is canonical for numbering within this document.
+
+209. As a member, I want my password stored irreversibly and my login attempts throttled, so that a leak or brute force does not expose my account.
+210. As a visitor, I want OTPs that are single-use, short-lived, attempt-limited and purpose-bound, so that my number cannot be hijacked.
+211. As a member, I want short-lived access tokens and rotating refresh tokens with reuse detection, so that a stolen token has limited value.
+212. As a member, I want to see and revoke my signed-in devices and have password changes end other sessions, so that I can cut off a lost phone.
+213. As a member, I want re-verification before changing email, mobile or password or requesting export or deletion, so that a hijacked session cannot do lasting damage.
+214. As a member, I want other members unable to read or change my resources by guessing IDs, so that my profile, photos, documents and conversations stay private.
+215. As a member, I want block, hide and privacy rules enforced in the database query, so that a client bug cannot expose my data.
+216. As the platform, I want gated features and full contact values withheld by the server until entitlement, so that a modified client cannot unlock them.
+217. As the business, I want mandatory admin MFA, least-privilege roles, and an immutable audit log of every sensitive action, so that the back office is protected and accountable.
+218. As a member, I want my ID numbers and contact details encrypted and masked, and my photos and documents served only through short-lived signed URLs, so that a database or storage leak does not expose them.
+219. As the platform, I want PII excluded from logs, analytics, error trackers and push payloads, so that operational tooling never becomes a leak.
+220. As a member, I want my ID images deleted at the retention window and my data purged after deletion, so that my data is not kept longer than needed.
+221. As the platform, I want every input validated, SQL parameterised, output encoded, and CSRF, CORS and CSP enforced, so that injection, XSS and cross-site attacks fail.
+222. As the platform, I want uploads checked by content, virus-scanned, re-encoded and stripped of EXIF in quarantine before use, so that malicious files never go live.
+223. As the platform, I want rate limits and scraping detection on login, OTP, search, profile views, interests, messages and uploads, so that abuse and bulk harvesting are impractical.
+224. As a member, I want chat connections authenticated and rooms joined only after a server-side eligibility check, so that conversations cannot be hijacked.
+225. As a member, I want duplicate IDs, reused photos and scam or harassment patterns flagged and acted on, so that fake profiles and abuse are contained.
+226. As the business, I want payment webhooks signature-verified, replay-safe and amount-matched before any entitlement grant, so that forged payments cannot unlock paid features.
+227. As the platform, I want secrets in a managed store, dependency and image scanning in CI, and least-privilege infrastructure, so that a single compromise is contained.
+228. As the platform, I want security monitoring, tested backups, an incident-response plan, a disclosure policy and a pre-launch penetration test, so that attacks are detected and breaches are handled within statutory timelines.
+
 ---
 
 ## Implementation Decisions
@@ -476,6 +502,23 @@ The product is free to join and browse. Verified profiles are the default: no pr
 - All mutations are authorised by role and ownership checks. The API never trusts a client-supplied user ID.
 - The OpenAPI document is generated from the backend and published as the contract for PWA and admin clients.
 - Third-party integrations sit behind adapters: KYC, payments, SMS, email, push, object storage, video. Each adapter has a fake implementation for tests.
+
+### Security specification
+
+Security is a first-class, release-blocking requirement. Detail, acceptance criteria and phase mapping live in `spec/15-security-stories.md` and `spec/10-non-functional.md` §1.
+
+- **Threat model:** assets are government ID data, member PII and contact details, accounts, the admin back office, payments, chat and uploaded media. Each has named controls in `spec/15-security-stories.md` §1.
+- **Authentication:** bcrypt (cost ≥ 12) or argon2id; login throttling with progressive delay and lockout; no user enumeration; OTPs are 6 digits, hashed, single-use, 5-minute, attempt- and send-limited, and bound to one purpose; 15-minute in-memory access JWT plus opaque rotating refresh cookie with family revocation on reuse; step-up re-verification for email, mobile, password, export and deletion changes.
+- **Authorization:** role and ownership checked server-side on every endpoint; identity from the verified token only; object-level access returns 404 where existence would leak; privacy (block, hide, photo and contact visibility) enforced in the query layer; entitlements resolved server-side with masked values produced server-side; DTO allowlists prevent mass assignment; status changes only through the state machine.
+- **Admin:** MFA mandatory (TOTP or WebAuthn), separate and shorter-lived tokens, least-privilege roles, second-approver for role changes, guardrails on bulk ID viewing, and an append-only, tamper-evident audit log the application database role cannot modify.
+- **Data protection:** TLS 1.2+ with HSTS; encryption at rest for database, object storage and backups; envelope field-level encryption with KMS keys for ID numbers, contact fields and ID image keys; masking in every read model; private buckets with 5–15 minute signed URLs; PII redacted from logs, traces, analytics, error trackers and push payloads; retention purge of raw ID images and deleted accounts.
+- **Application security:** schema validation at the boundary, parameterised SQL with allowlisted sort/filter fields, output encoding, CSRF protection, exact-origin CORS, strict nonce-based CSP and the standard security headers, content-sniffed and virus-scanned uploads held in quarantine, EXIF stripping and re-encoding, SSRF allowlisting, and tiered rate limits keyed by account, IP and device.
+- **PWA and realtime:** the service worker never caches authenticated responses or signed media URLs; caches and IndexedDB drafts are cleared on logout and exclude ID data; Socket.io handshakes validate the token, re-validate on refresh, check origin and eligibility before joining rooms, and rate-limit per socket.
+- **Fraud and abuse:** duplicate ID (keyed hash), mobile, email and perceptual-hash photo matches route to manual review; contact-info and solicitation detection; symmetric blocking; repeated reports auto-hide pending review; enumeration-resistant responses.
+- **Payments:** Razorpay signature verified on the raw body, timestamp tolerance, idempotency on provider event ID, server-side amount/currency/order match, no card data on our servers, audited grants and refunds.
+- **Operations:** managed secret store with per-environment keys and overlap rotation; secret, SAST, dependency and container scanning in CI; separate database roles for app, migration and reporting; segmented networks; alerting on auth-failure spikes, refresh reuse, OTP abuse, admin anomalies and webhook failures; encrypted backups with a quarterly tested restore; incident-response plan and tabletop before launch; `security.txt` and disclosure policy; external penetration test before launch, annually, and after major auth or payment changes.
+- **Security release gate:** a release is blocked by a failing or incomplete authorization matrix, an open high/critical vulnerability, a secret-scan hit, a failed header/CSP check, a missing audit entry for a covered action, or payment, verification or privacy changes without recorded security sign-off.
+- **Launch prerequisites:** incident-response plan, security monitoring and alerting, and the penetration test (SEC-24, SEC-43, SEC-45) MUST be complete before public launch even though they are scheduled with Phase 2 engineering.
 
 ### Non-functional baseline
 
