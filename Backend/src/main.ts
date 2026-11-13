@@ -1,9 +1,12 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { env, validateEnv } from './config/env';
 
 async function bootstrap() {
-  console.time('[PERF] NestJSFactory.create');
+  validateEnv();
+
+  console.time('[PERF] NestFactory.create');
   const app = await NestFactory.create(AppModule);
   console.timeEnd('[PERF] NestFactory.create');
   
@@ -22,7 +25,7 @@ async function bootstrap() {
    console.time('[PERF] CORS setup');
    // CORS — restrict in production
    app.enableCors({
-     origin: process.env.NODE_ENV === 'production' ? [] : '*',
+     origin: env.isProduction ? [] : '*',
     credentials: true,
   });
   console.timeEnd('[PERF] CORS setup');
@@ -33,10 +36,13 @@ async function bootstrap() {
   console.timeEnd('[PERF] API module setup');
 
   console.time('[PERF] app.listen');
-  const port = process.env.PORT ?? 3000;
+  const port = env.port;
   await app.listen(port);
   console.timeEnd('[PERF] app.listen');
-  console.log(`Dhobi Matrimony API running on: http://localhost:${port}/api/v1`);
+  console.log(
+    `Dhobi Matrimony API running on: http://localhost:${port}/api/v1 ` +
+      `(NODE_ENV=${env.nodeEnv}, env file=${env.envFile})`,
+  );
 }
 
 bootstrap();

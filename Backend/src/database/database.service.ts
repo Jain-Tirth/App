@@ -4,8 +4,8 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Pool, QueryResult, QueryResultRow } from 'pg';
+import { env } from '../config/env';
 import type { DatabaseClient } from './database.types';
 
 @Injectable()
@@ -13,8 +13,8 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DatabaseService.name);
   private pool: Pool;
 
-  constructor(private readonly configService: ConfigService) {
-    const connectionString =this.configService.get<string>('DATABASE_URL');
+  constructor() {
+    const connectionString = env.databaseUrl;
 
     this.pool = new Pool({
       connectionString,

@@ -1,13 +1,13 @@
-import 'dotenv/config';
 import * as bcrypt from 'bcrypt';
 import { Client } from 'pg';
+import { env } from '../src/config/env';
 
 const BCRYPT_ROUNDS = 12;
 
 async function main() {
-  const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-  const password = process.env.ADMIN_PASSWORD?.trim();
-  const name = process.env.ADMIN_NAME?.trim() || 'Admin User';
+  const email = env.admin.email.trim().toLowerCase();
+  const password = env.admin.password.trim();
+  const name = env.admin.name.trim() || 'Admin User';
 
   if (!email || !password) {
     throw new Error(
@@ -15,9 +15,7 @@ async function main() {
     );
   }
 
-  const connectionString = process.env.DATABASE_URL;
-
-  const client = new Client({ connectionString });
+  const client = new Client({ connectionString: env.databaseUrl });
   await client.connect();
 
   try {
