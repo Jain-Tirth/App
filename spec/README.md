@@ -19,6 +19,7 @@ This folder contains the detailed appendices for `../SPEC.md`. Read `SPEC.md` fi
 13. `12-testing-strategy.md` — seams, test matrix, CI and release gates.
 14. `13-roadmap.md` — MVP, Phase 2, Phase 3 and the Expo migration trigger.
 15. `14-expo-migration.md` — how the PWA becomes an Expo app without a rewrite.
+16. `15-security-stories.md` — threat model and the 47 security stories (SEC-01 to SEC-47) with acceptance criteria, tests, release gates and phase mapping.
 
 ## Conventions used in these documents
 
