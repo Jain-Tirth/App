@@ -36,7 +36,7 @@ async function bootstrap() {
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
   console.timeEnd('[PERF] app.listen');
-  console.log(`🚀 Dhobi Matrimony API running on: http://localhost:${port}/api/v1`);
+  console.log(`Dhobi Matrimony API running on: http://localhost:${port}/api/v1`);
 }
 
 bootstrap();
