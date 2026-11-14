@@ -10,7 +10,7 @@ export default defineConfig({
   testMatch: /.*\.spec\.ts/,
   workers: 1,
   outputDir: '../../.loop/artifacts/playwright-results',
-  use: { baseURL: 'http://localhost:5173', screenshot: 'on', trace: 'retain-on-failure' },
+  use: { baseURL: 'http://localhost:5183', screenshot: 'on', trace: 'retain-on-failure' },
   webServer: [
     {
       command: 'node tests/e2e/admin-review-ui-server.mjs',
@@ -21,8 +21,8 @@ export default defineConfig({
       cwd: '../..',
     },
     {
-      command: 'npm --prefix AdminPanel run dev -- --strictPort',
-      url: 'http://localhost:5173/login',
+      command: 'npm --prefix AdminPanel run dev -- --port 5183 --strictPort',
+      url: 'http://localhost:5183/login',
       timeout: 120_000,
       reuseExistingServer: false,
       cwd: '../..',

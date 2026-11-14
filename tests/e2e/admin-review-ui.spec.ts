@@ -11,7 +11,7 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 
-const seed = JSON.parse(readFileSync('.loop/artifacts/ui-seed.json', 'utf8'));
+const seed = JSON.parse(readFileSync(require('node:path').join(__dirname, '../../.loop/artifacts/ui-seed.json'), 'utf8'));
 
 test.beforeEach(async ({ page }) => {
   // Fake-storage image URLs cannot load; fulfil them with a 1x1 PNG so they cannot fail the run.
@@ -20,15 +20,15 @@ test.beforeEach(async ({ page }) => {
       ? route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64') })
       : route.continue(),
   );
-  await page.goto('http://localhost:5173/login');
+  await page.goto('/login');
   await page.getByPlaceholder('admin@dhobimatrimony.com').fill(seed.email);
   await page.getByPlaceholder('••••••••').fill(seed.password);
   await page.getByRole('button', { name: 'Sign In to Console' }).click();
-  await page.waitForURL('http://localhost:5173/');
+  await page.waitForURL((u) => u.pathname === '/');
 });
 
 test('queue is oldest first with an SLA badge per row', async ({ page }) => {
-  await page.goto('http://localhost:5173/profiles');
+  await page.goto('/profiles');
   const rows = page.getByTestId('queue-row');
   await expect(rows.first()).toContainText(/Overdue|At risk|On track/);
   const count = await rows.count();
@@ -36,7 +36,7 @@ test('queue is oldest first with an SLA badge per row', async ({ page }) => {
 });
 
 test('reject and request changes are gated on reason code, notes and section', async ({ page }) => {
-  await page.goto(`http://localhost:5173/profiles/${seed.seeds.underAge}`);
+  await page.goto(`/profiles/${seed.seeds.underAge}`);
   await expect(page.getByTestId('age-check')).toHaveText('Age check: fail');
   await expect(page.getByTestId('masked-id')).toHaveText('****234F');
   await expect(page.getByTestId('decision-reject')).toBeDisabled();
