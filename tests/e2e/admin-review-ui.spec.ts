@@ -5,7 +5,8 @@
  * `node tests/e2e/admin-review-ui-server.mjs` and `npm --prefix AdminPanel run dev`, then
  * `npx playwright test tests/e2e/admin-review-ui.spec.ts`.
  *
- * AdminPanel hardcodes the API base to http://localhost:3000, so the test redirects it to the test API.
+ * Run: npx playwright test -c tests/e2e/playwright.config.ts (config starts harness + AdminPanel dev with
+ * VITE_BASE_URL=http://127.0.0.1:3101, which overrides AdminPanel/.env). Needs a real @playwright/test install.
  */
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -13,8 +14,11 @@ import { readFileSync } from 'node:fs';
 const seed = JSON.parse(readFileSync('.loop/artifacts/ui-seed.json', 'utf8'));
 
 test.beforeEach(async ({ page }) => {
-  await page.route('http://localhost:3000/**', (route) =>
-    route.continue({ url: route.request().url().replace('http://localhost:3000/', 'http://127.0.0.1:3101/') }),
+  // Fake-storage image URLs cannot load; fulfil them with a 1x1 PNG so they cannot fail the run.
+  await page.route(/\.(png|jpe?g|webp)(\?.*)?$|fake-storage|\/storage\//i, (route) =>
+    route.request().resourceType() === 'image'
+      ? route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64') })
+      : route.continue(),
   );
   await page.goto('http://localhost:5173/login');
   await page.getByPlaceholder('admin@dhobimatrimony.com').fill(seed.email);
