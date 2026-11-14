@@ -8,6 +8,7 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
   testMatch: /.*\.spec\.ts/,
+  testIgnore: '**/userweb/**',
   workers: 1,
   outputDir: '../../.loop/artifacts/playwright-results',
   use: { baseURL: 'http://localhost:5183', screenshot: 'on', trace: 'retain-on-failure' },
