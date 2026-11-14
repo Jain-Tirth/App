@@ -34,6 +34,8 @@ function bootBackend() {
       DATABASE_URL: TEST_DATABASE_URL,
       PORT: String(TEST_API_PORT),
       NODE_ENV: 'development',
+      STORAGE_PROVIDER: 'fake',
+      KYC_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64')
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
