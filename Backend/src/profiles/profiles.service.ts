@@ -1,9 +1,13 @@
 import {
   BadRequestException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { ApiException } from '../common/api-error';
+import { env } from '../config/env';
+import { evaluateAgeGate } from './age-gate';
 import { DatabaseService } from '../database/database.service';
 import { SaveAdditionalDetailsDto } from './dto/save-additional-details.dto';
 import { SaveLocationDetailsDto } from './dto/save-location-details.dto';
@@ -92,6 +96,7 @@ export class ProfilesService {
     currentUser: AuthenticatedUser,
     dto: SavePersonalDetailsDto,
   ) {
+    this.assertAgeAllowed(dto);
     await this.assertUserVerified(currentUser.sub);
 
     if (dto.gender) {
@@ -184,6 +189,35 @@ export class ProfilesService {
     ]);
 
     return this.getMyProfile(currentUser);
+  }
+
+  private assertAgeAllowed(dto: SavePersonalDetailsDto): void {
+    const result = evaluateAgeGate(
+      dto.gender,
+      dto.dateOfBirth,
+      new Date(),
+      env.ageMinimums,
+    );
+
+    if (result.ok) {
+      return;
+    }
+
+    if (result.reason === 'AGE_BELOW_MINIMUM') {
+      throw new ApiException(
+        HttpStatus.BAD_REQUEST,
+        'AGE_BELOW_MINIMUM',
+        `Members must be at least ${result.minimumAge} years old.`,
+        { minimumAge: result.minimumAge },
+      );
+    }
+
+    throw new ApiException(
+      HttpStatus.BAD_REQUEST,
+      'INVALID_DATE_OF_BIRTH',
+      'Date of birth must be a real date that is not in the future.',
+      { field: 'dateOfBirth' },
+    );
   }
 
   private async assertUserVerified(userId: string) {

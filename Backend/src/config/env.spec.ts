@@ -70,4 +70,78 @@ describe('env', () => {
       }
     }
   });
+
+  describe('age minimums', () => {
+    const required = {
+      DATABASE_URL: 'postgres://example/db',
+      JWT_SECRET: 'jwt-secret',
+      JWT_REFRESH_SECRET: 'jwt-refresh-secret',
+      ADMIN_JWT_SECRET: 'admin-jwt-secret',
+    };
+    const touched = [
+      ...Object.keys(required),
+      'AGE_MIN_MALE',
+      'AGE_MIN_FEMALE',
+    ];
+    let saved: Record<string, string | undefined>;
+
+    beforeEach(() => {
+      saved = Object.fromEntries(touched.map((key) => [key, process.env[key]]));
+      Object.assign(process.env, required);
+      delete process.env.AGE_MIN_MALE;
+      delete process.env.AGE_MIN_FEMALE;
+    });
+
+    afterEach(() => {
+      for (const key of touched) {
+        if (saved[key] === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = saved[key];
+        }
+      }
+    });
+
+    it('defaults to 21 for men and 18 for women', () => {
+      const { env } = loadEnvModule('development');
+
+      expect(env.ageMinimums).toEqual({ male: 21, female: 18 });
+    });
+
+    it('reads AGE_MIN_MALE and AGE_MIN_FEMALE', () => {
+      process.env.AGE_MIN_MALE = '22';
+      process.env.AGE_MIN_FEMALE = '19';
+      const { env } = loadEnvModule('development');
+
+      expect(env.ageMinimums).toEqual({ male: 22, female: 19 });
+    });
+
+    it('refuses to boot when AGE_MIN_MALE is not an integer', () => {
+      process.env.AGE_MIN_MALE = '21.5';
+      const { validateEnv } = loadEnvModule('development');
+
+      expect(() => validateEnv()).toThrow(/AGE_MIN_MALE/);
+    });
+
+    it('refuses to boot when AGE_MIN_FEMALE is not a number', () => {
+      process.env.AGE_MIN_FEMALE = 'eighteen';
+      const { validateEnv } = loadEnvModule('development');
+
+      expect(() => validateEnv()).toThrow(/AGE_MIN_FEMALE/);
+    });
+
+    it('refuses to boot when AGE_MIN_MALE is below 18', () => {
+      process.env.AGE_MIN_MALE = '17';
+      const { validateEnv } = loadEnvModule('development');
+
+      expect(() => validateEnv()).toThrow(/AGE_MIN_MALE/);
+    });
+
+    it('refuses to boot when AGE_MIN_FEMALE is below 18', () => {
+      process.env.AGE_MIN_FEMALE = '16';
+      const { validateEnv } = loadEnvModule('development');
+
+      expect(() => validateEnv()).toThrow(/AGE_MIN_FEMALE/);
+    });
+  });
 });

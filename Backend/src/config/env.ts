@@ -66,6 +66,20 @@ const optionalPort = (fallback: number) =>
   );
 
 /**
+ * A minimum age in whole years. The policy default is stated by the spec; no
+ * deployment may configure a minimum below the legal age of 18.
+ */
+const minimumAge = (fallback: number) =>
+  z.preprocess(
+    (value) =>
+      value === undefined ||
+      (typeof value === 'string' && value.trim() === '')
+        ? fallback
+        : value,
+    z.coerce.number().int().min(18),
+  );
+
+/**
  * The full environment contract. Every variable the API reads is declared here,
  * once, with its type, requiredness and default.
  */
@@ -73,6 +87,8 @@ const envSchema = z.object({
   NODE_ENV: nodeEnvSchema,
   PORT: optionalPort(3000),
   DATABASE_URL: z.string().min(1),
+  AGE_MIN_MALE: minimumAge(21),
+  AGE_MIN_FEMALE: minimumAge(18),
   REDIS_URL: optionalString('redis://localhost:6379'),
   JWT_SECRET: z.string().min(1),
   JWT_EXPIRES_IN: optionalString('7d'),
@@ -158,6 +174,11 @@ export const env = {
   },
   get redisUrl(): string {
     return loadEnv().REDIS_URL;
+  },
+  get ageMinimums() {
+    const parsed = loadEnv();
+
+    return { male: parsed.AGE_MIN_MALE, female: parsed.AGE_MIN_FEMALE };
   },
   get jwt() {
     const parsed = loadEnv();

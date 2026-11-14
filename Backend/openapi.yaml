@@ -14,6 +14,8 @@ tags:
     description: Versioned consent documents and append-only consent records
   - name: Auth
     description: Registration, OTP and sessions
+  - name: Profiles
+    description: Member profile steps
 security:
   - bearerAuth: []
 paths:
@@ -172,6 +174,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  /profiles/step-1:
+    put:
+      tags: [Profiles]
+      summary: Save personal details (step 1), enforcing the minimum age
+      description: |
+        Saves gender, date of birth and the other personal details. Age is
+        derived from `dateOfBirth` and today's UTC date in whole calendar years
+        and is never stored. A member whose gender minimum (`AGE_MIN_MALE`,
+        default 21; `AGE_MIN_FEMALE`, default 18) is not met is rejected with
+        `AGE_BELOW_MINIMUM`; a date of birth in the future is rejected with
+        `INVALID_DATE_OF_BIRTH`. A person born on 29 February reaches each
+        birthday on 1 March in non-leap years. Nothing is saved on rejection.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavePersonalDetailsRequest'
+      responses:
+        '200':
+          description: Personal details saved; the member's profile is returned
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: |
+            Rejected. `code` is one of `AGE_BELOW_MINIMUM` (details
+            `{ "minimumAge": 21 }`), `INVALID_DATE_OF_BIRTH` (future date), or
+            `VALIDATION_ERROR` (details `{ "issues": [...] }`, including a
+            `dateOfBirth` issue for a value that is not a real calendar date).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                belowMinimum:
+                  value:
+                    code: AGE_BELOW_MINIMUM
+                    message: Members must be at least 21 years old.
+                    details: { minimumAge: 21 }
+                    requestId: 7d0c6c3e-0f0b-4b0e-9f5e-2f1f3f2f1a11
+                futureDate:
+                  value:
+                    code: INVALID_DATE_OF_BIRTH
+                    message: Date of birth must be a real date that is not in the future.
+                    details: { field: dateOfBirth }
+                    requestId: 7d0c6c3e-0f0b-4b0e-9f5e-2f1f3f2f1a12
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 components:
   securitySchemes:
     bearerAuth:
@@ -192,6 +244,41 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
   schemas:
+    SavePersonalDetailsRequest:
+      type: object
+      required: [gender, dateOfBirth]
+      properties:
+        gender:
+          type: string
+          enum: [male, female]
+        dateOfBirth:
+          type: string
+          format: date
+          description: Real calendar date, YYYY-MM-DD
+          example: '2000-01-31'
+        heightCm:
+          type: integer
+          minimum: 120
+          maximum: 240
+        weightKg:
+          type: integer
+          minimum: 30
+          maximum: 200
+        physicalStatus:
+          type: string
+          enum: [normal, physicallyChallenged]
+        maritalStatus:
+          type: string
+          enum: [neverMarried, widower, awaitingDivorce, divorced]
+        spokenLanguages:
+          type: array
+          items:
+            type: string
+        eatingHabits:
+          type: string
+          enum: [vegetarian, nonVegetarian, eggetarian]
+        residentStatus:
+          type: string
     ConsentLanguage:
       type: string
       enum: [en, hi, gu]

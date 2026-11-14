@@ -1,7 +1,6 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
-  IsDateString,
   IsEnum,
   IsInt,
   IsOptional,
@@ -9,6 +8,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
+import { IsCalendarDate } from '../is-calendar-date.decorator';
 
 export enum Gender {
   male = 'male',
@@ -37,7 +37,7 @@ export class SavePersonalDetailsDto {
   @IsEnum(Gender)
   gender!: Gender;
 
-  @IsDateString()
+  @IsCalendarDate()
   dateOfBirth!: string;
 
   @IsOptional()
