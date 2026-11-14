@@ -1,17 +1,10 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
-import type { AuthenticatedUser } from '../auth/auth.types';
 import { env } from '../config/env';
 import { DatabaseService } from '../database/database.service';
 import { AdminLoginDto } from './dto/admin-login.dto';
-import { RejectProfileDto } from './dto/reject-profile.dto';
 
 interface AdminUserRow {
   id: string;
@@ -91,85 +84,4 @@ export class AdminService {
     };
   }
 
-  async listPendingProfiles() {
-    const rawResult = await this.db.callFunctionSingle<{
-      fn_admin_list_pending_profiles: any[];
-    }>('fn_admin_list_pending_profiles');
-
-    const list = rawResult?.fn_admin_list_pending_profiles ?? [];
-
-    return {
-      total: list.length,
-      profiles: list,
-    };
-  }
-
-  async getProfileForReview(userId: string) {
-    const rawResult = await this.db.callFunctionSingle<{
-      fn_get_profile_by_user_id: any;
-    }>('fn_get_profile_by_user_id', [userId]);
-
-    const payload = rawResult?.fn_get_profile_by_user_id;
-    if (!payload || !payload.profile) {
-      throw new NotFoundException('Profile not found.');
-    }
-
-    return {
-      profile: {
-        ...payload.profile,
-        user: payload.user,
-      },
-    };
-  }
-
-  async approveProfile(userId: string, adminUser: AuthenticatedUser) {
-    const profileData = await this.getProfileForReview(userId);
-    const user = profileData.profile.user;
-
-    if (user.accountStatus === 'active') {
-      throw new BadRequestException('This profile is already approved.');
-    }
-
-    if (user.accountStatus === 'blocked') {
-      throw new BadRequestException('Blocked accounts cannot be approved.');
-    }
-
-    await this.db.callProcedure('sp_admin_approve_profile', [
-      userId,
-      adminUser.sub,
-    ]);
-
-    const updatedProfile = await this.getProfileForReview(userId);
-
-    return {
-      message: 'Profile approved successfully.',
-      profile: updatedProfile.profile,
-    };
-  }
-
-  async rejectProfile(
-    userId: string,
-    dto: RejectProfileDto,
-    adminUser: AuthenticatedUser,
-  ) {
-    const profileData = await this.getProfileForReview(userId);
-    const user = profileData.profile.user;
-
-    if (user.accountStatus === 'blocked') {
-      throw new BadRequestException('Blocked accounts cannot be rejected.');
-    }
-
-    await this.db.callProcedure('sp_admin_reject_profile', [
-      userId,
-      adminUser.sub,
-      dto.reason.trim(),
-    ]);
-
-    const updatedProfile = await this.getProfileForReview(userId);
-
-    return {
-      message: 'Profile rejected successfully.',
-      profile: updatedProfile.profile,
-    };
-  }
 }

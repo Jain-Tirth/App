@@ -49,6 +49,10 @@ export default function App() {
         }
       />
       <Route
+        path="/profiles"
+        element={token ? <ReviewPage token={token} /> : <Navigate to="/login" replace />}
+      />
+      <Route
         path="/profiles/:userId"
         element={token ? <ReviewPage token={token} /> : <Navigate to="/login" replace />}
       />

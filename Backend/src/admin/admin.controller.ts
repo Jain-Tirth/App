@@ -1,16 +1,41 @@
-import { Controller, Get, Param, Patch, Body, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request } from 'express';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { getClientIp, getUserAgent } from '../common/request-context';
 import { AdminJwtAuthGuard } from './admin-jwt-auth.guard';
 import { AdminLoginDto } from './dto/admin-login.dto';
+import { ReviewDecisionDto } from './dto/review-decision.dto';
 import { AdminService } from './admin.service';
-import { RejectProfileDto } from './dto/reject-profile.dto';
+import { AdminReviewService } from './review/review.service';
+import type { AuditContext, ReviewDecision } from './review/review.types';
+import { UserIdPipe } from './review/user-id.pipe';
+
+function auditContext(request: Request & { requestId?: string }): AuditContext {
+  return {
+    requestId: request.requestId ?? '',
+    ip: getClientIp(request),
+    userAgent: getUserAgent(request),
+  };
+}
 
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly reviewService: AdminReviewService,
+  ) {}
 
   @Post('login')
   login(@Body() dto: AdminLoginDto) {
@@ -28,34 +53,80 @@ export class AdminController {
   @Roles('admin')
   @Get('profiles/pending')
   listPendingProfiles() {
-    return this.adminService.listPendingProfiles();
+    return this.reviewService.listQueue();
   }
 
   @UseGuards(AdminJwtAuthGuard, RolesGuard)
   @Roles('admin')
   @Get('profiles/:userId')
-  getProfileForReview(@Param('userId') userId: string) {
-    return this.adminService.getProfileForReview(userId);
+  getProfileForReview(@Param('userId', UserIdPipe) userId: string) {
+    return this.reviewService.getWorkspace(userId);
+  }
+
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @Get('profiles/:userId/id-document')
+  openIdDocument(
+    @Param('userId', UserIdPipe) userId: string,
+    @CurrentUser() adminUser: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.reviewService.openIdDocument(
+      userId,
+      adminUser.sub,
+      auditContext(request),
+    );
   }
 
   @UseGuards(AdminJwtAuthGuard, RolesGuard)
   @Roles('admin')
   @Patch('profiles/:userId/approve')
   approveProfile(
-    @Param('userId') userId: string,
+    @Param('userId', UserIdPipe) userId: string,
+    @Body() dto: ReviewDecisionDto,
     @CurrentUser() adminUser: AuthenticatedUser,
+    @Req() request: Request,
   ) {
-    return this.adminService.approveProfile(userId, adminUser);
+    return this.decide('approve', userId, dto, adminUser, request);
   }
 
   @UseGuards(AdminJwtAuthGuard, RolesGuard)
   @Roles('admin')
   @Patch('profiles/:userId/reject')
   rejectProfile(
-    @Param('userId') userId: string,
-    @Body() dto: RejectProfileDto,
+    @Param('userId', UserIdPipe) userId: string,
+    @Body() dto: ReviewDecisionDto,
     @CurrentUser() adminUser: AuthenticatedUser,
+    @Req() request: Request,
   ) {
-    return this.adminService.rejectProfile(userId, dto, adminUser);
+    return this.decide('reject', userId, dto, adminUser, request);
+  }
+
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @Patch('profiles/:userId/request-changes')
+  requestChanges(
+    @Param('userId', UserIdPipe) userId: string,
+    @Body() dto: ReviewDecisionDto,
+    @CurrentUser() adminUser: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.decide('requestChanges', userId, dto, adminUser, request);
+  }
+
+  private decide(
+    decision: ReviewDecision,
+    userId: string,
+    dto: ReviewDecisionDto,
+    adminUser: AuthenticatedUser,
+    request: Request,
+  ) {
+    return this.reviewService.decide(
+      decision,
+      userId,
+      adminUser.sub,
+      dto,
+      auditContext(request),
+    );
   }
 }

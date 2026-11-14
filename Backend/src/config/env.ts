@@ -90,6 +90,52 @@ const kycEncryptionKey = z
     message: 'must be 32 bytes encoded as base64',
   });
 
+const optionalPositiveInt = (fallback: number) =>
+  z.preprocess(
+    (value) =>
+      value === undefined ||
+      (typeof value === 'string' && value.trim() === '')
+        ? fallback
+        : value,
+    z.coerce.number().int().positive(),
+  );
+
+/** `HH:MM` on a 24-hour clock, converted to minutes after midnight. */
+const clockMinutes = (fallback: string) =>
+  optionalString(fallback)
+    .refine((value) => /^([01]\d|2[0-3]):[0-5]\d$/.test(value), {
+      message: 'must be HH:MM on a 24-hour clock',
+    })
+    .transform((value) => {
+      const [hours, minutes] = value.split(':').map(Number);
+
+      return hours * 60 + minutes;
+    });
+
+/** Comma-separated ISO weekdays, Monday = 1 ... Sunday = 7. */
+const isoWeekdays = (fallback: string) =>
+  optionalString(fallback)
+    .transform((value) => value.split(',').map((item) => Number(item.trim())))
+    .refine(
+      (days) =>
+        days.length > 0 &&
+        days.every((day) => Number.isInteger(day) && day >= 1 && day <= 7),
+      { message: 'must be a comma-separated list of weekdays 1 (Mon) to 7 (Sun)' },
+    );
+
+const timeZoneName = (fallback: string) =>
+  optionalString(fallback).refine(
+    (value) => {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: value });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: 'must be a valid IANA time zone' },
+  );
+
 const envSchema = z
   .object({
   NODE_ENV: nodeEnvSchema,
@@ -115,11 +161,24 @@ const envSchema = z
   S3_ENDPOINT: optionalString(''),
   STORAGE_PROVIDER: z.enum(['s3', 'fake']),
   KYC_ENCRYPTION_KEY: kycEncryptionKey,
+  REVIEW_SLA_HOURS: optionalPositiveInt(48),
+  REVIEW_BUSINESS_DAYS: isoWeekdays('1,2,3,4,5'),
+  REVIEW_BUSINESS_START: clockMinutes('09:00'),
+  REVIEW_BUSINESS_END: clockMinutes('18:00'),
+  REVIEW_TIMEZONE: timeZoneName('Asia/Kolkata'),
   FCM_PROJECT_ID: optionalString(''),
   FCM_CLIENT_EMAIL: optionalString(''),
   FCM_PRIVATE_KEY: optionalString(''),
   })
   .superRefine((value, context) => {
+    if (value.REVIEW_BUSINESS_START >= value.REVIEW_BUSINESS_END) {
+      context.addIssue({
+        code: 'custom',
+        path: ['REVIEW_BUSINESS_END'],
+        message: 'must be later than REVIEW_BUSINESS_START',
+      });
+    }
+
     if (value.STORAGE_PROVIDER === 'fake' && isProduction) {
       context.addIssue({
         code: 'custom',
@@ -262,6 +321,17 @@ export const env = {
   },
   get kycEncryptionKey(): Buffer {
     return Buffer.from(loadEnv().KYC_ENCRYPTION_KEY, 'base64');
+  },
+  get review() {
+    const parsed = loadEnv();
+
+    return {
+      slaHours: parsed.REVIEW_SLA_HOURS,
+      days: parsed.REVIEW_BUSINESS_DAYS,
+      startMinute: parsed.REVIEW_BUSINESS_START,
+      endMinute: parsed.REVIEW_BUSINESS_END,
+      timeZone: parsed.REVIEW_TIMEZONE,
+    };
   },
   get fcm() {
     const parsed = loadEnv();

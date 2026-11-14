@@ -22,8 +22,8 @@ import {
   ArrowRight,
   Shield,
   RefreshCw,
-  Check,
 } from 'lucide-react';
+import { SlaBadge } from '../components/SlaBadge';
 
 interface DashboardProps {
   token: string;
@@ -36,7 +36,6 @@ export function Dashboard({ token, adminName, onLogout }: DashboardProps) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [profiles, setProfiles] = useState<PendingProfile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [approvingId, setApprovingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   async function loadData() {
@@ -59,19 +58,6 @@ export function Dashboard({ token, adminName, onLogout }: DashboardProps) {
   useEffect(() => {
     void loadData();
   }, [token]);
-
-  async function quickApprove(userId: string) {
-    setApprovingId(userId);
-    setError('');
-    try {
-      await api.approveProfile(token, userId);
-      await loadData();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to approve profile');
-    } finally {
-      setApprovingId(null);
-    }
-  }
 
   const statItems = [
     {
@@ -212,9 +198,8 @@ export function Dashboard({ token, adminName, onLogout }: DashboardProps) {
                   <TableRow>
                     <TableHead className="w-[28%]">Applicant</TableHead>
                     <TableHead>Profile UID</TableHead>
-                    <TableHead>Gender</TableHead>
-                    <TableHead>Created By</TableHead>
-                    <TableHead>Completeness</TableHead>
+                    <TableHead>Submitted</TableHead>
+                    <TableHead>Review clock</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -223,7 +208,6 @@ export function Dashboard({ token, adminName, onLogout }: DashboardProps) {
                     <TableRow key={profile.userId}>
                       <TableCell>
                         <div className="font-medium text-white">{profile.name}</div>
-                        <div className="font-mono text-xs text-neutral-400">{profile.email}</div>
                       </TableCell>
                       <TableCell>
                         <span className="font-mono text-xs text-neutral-300">
@@ -231,40 +215,18 @@ export function Dashboard({ token, adminName, onLogout }: DashboardProps) {
                         </span>
                       </TableCell>
                       <TableCell>
-                        <span className="capitalize text-neutral-300">
-                          {profile.gender ?? '—'}
+                        <span className="text-xs text-neutral-300">
+                          {new Date(profile.submittedAt).toLocaleString()}
                         </span>
                       </TableCell>
                       <TableCell>
-                        <span className="capitalize text-neutral-300">
-                          {profile.profileCreatedBy ?? 'Self'}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-neutral-800">
-                            <div
-                              className="h-full bg-white transition-all"
-                              style={{ width: `${Math.min(profile.profileComplete, 100)}%` }}
-                            />
-                          </div>
-                          <span className="font-mono text-xs text-neutral-400">
-                            {profile.profileComplete}%
-                          </span>
-                        </div>
+                        <SlaBadge
+                          state={profile.slaState}
+                          remainingHours={profile.slaRemainingHours}
+                        />
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <Button
-                            size="sm"
-                            variant="default"
-                            disabled={approvingId === profile.userId}
-                            onClick={() => void quickApprove(profile.userId)}
-                            className="gap-1 text-xs bg-white text-black hover:bg-neutral-200"
-                          >
-                            <Check className="h-3.5 w-3.5" />
-                            <span>{approvingId === profile.userId ? 'Approving...' : 'Approve'}</span>
-                          </Button>
                           <Button
                             size="sm"
                             variant="outline"

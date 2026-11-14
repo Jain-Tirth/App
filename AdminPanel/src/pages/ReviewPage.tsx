@@ -1,99 +1,140 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
-import type { ReviewProfileResponse } from '../types';
+import {
+  CHANGES_REASON_CODES,
+  REASON_CODES,
+  SECTIONS,
+  type PendingProfile,
+  type ReasonCode,
+  type ReviewWorkspace,
+  type Section,
+  type SignedDocument,
+} from '../types';
+import { SlaBadge } from '../components/SlaBadge';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Textarea } from '../components/ui/textarea';
-import { Separator } from '../components/ui/separator';
-import {
-  ArrowLeft,
-  Check,
-  X,
-  Shield,
-  AlertCircle,
-  Clock,
-  User,
-  Mail,
-  Phone,
-} from 'lucide-react';
+import { ArrowLeft, Check, X, Shield, AlertCircle, Clock, MessageSquareWarning } from 'lucide-react';
 
 interface ReviewPageProps {
   token: string;
 }
 
+const NOTES_MAX = 500;
+const selectClass =
+  'w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-white';
+
 export function ReviewPage({ token }: ReviewPageProps) {
   const navigate = useNavigate();
   const { userId = '' } = useParams();
-  const [data, setData] = useState<ReviewProfileResponse | null>(null);
-  const [reason, setReason] = useState('');
-  const [actionLoading, setActionLoading] = useState(false);
+  const [queue, setQueue] = useState<PendingProfile[]>([]);
+  const [workspace, setWorkspace] = useState<ReviewWorkspace | null>(null);
+  const [idDocument, setIdDocument] = useState<SignedDocument | null>(null);
+  const [reasonCode, setReasonCode] = useState<ReasonCode | ''>('');
+  const [notes, setNotes] = useState('');
+  const [sections, setSections] = useState<Section[]>([]);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  const loadQueue = useCallback(async () => {
+    try {
+      const response = await api.getPendingProfiles(token);
+      setQueue(response.profiles);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load the queue');
+    }
+  }, [token]);
+
   useEffect(() => {
+    void loadQueue();
+  }, [loadQueue]);
+
+  useEffect(() => {
+    setWorkspace(null);
+    setIdDocument(null);
+    setReasonCode('');
+    setNotes('');
+    setSections([]);
+
+    if (!userId) {
+      return;
+    }
+
+    let cancelled = false;
+
     async function load() {
       try {
-        const response = await api.getProfile(token, userId);
-        setData(response);
+        const loaded = await api.getWorkspace(token, userId);
+        // Opening the workspace is an ID view, so the audited endpoint is called.
+        const document = await api.openIdDocument(token, userId);
+
+        if (!cancelled) {
+          setWorkspace(loaded);
+          setIdDocument(document);
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load profile');
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load the submission');
+        }
       }
     }
 
     void load();
+
+    return () => {
+      cancelled = true;
+    };
   }, [token, userId]);
 
-  async function approve() {
-    setActionLoading(true);
+  async function submit(action: 'approve' | 'reject' | 'requestChanges') {
+    setBusy(true);
     setError('');
+
+    const body = {
+      ...(reasonCode ? { reasonCode } : {}),
+      ...(notes.trim() ? { notes: notes.trim() } : {}),
+      ...(action === 'requestChanges' ? { sections } : {}),
+    };
+
     try {
-      await api.approveProfile(token, userId);
-      navigate('/');
+      if (action === 'approve') {
+        await api.approveProfile(token, userId, body);
+      } else if (action === 'reject') {
+        await api.rejectProfile(token, userId, body);
+      } else {
+        await api.requestChanges(token, userId, body);
+      }
+
+      await loadQueue();
+      navigate('/profiles');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to approve profile');
-      setActionLoading(false);
+      setError(err instanceof Error ? err.message : 'Failed to record the decision');
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function reject() {
-    if (!reason.trim()) {
-      setError('Rejection reason is required.');
-      return;
-    }
-
-    setActionLoading(true);
-    setError('');
-    try {
-      await api.rejectProfile(token, userId, reason);
-      navigate('/');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reject profile');
-      setActionLoading(false);
-    }
+  function toggleSection(section: Section) {
+    setSections((current) =>
+      current.includes(section)
+        ? current.filter((item) => item !== section)
+        : [...current, section],
+    );
   }
 
-  const sections: [string, Record<string, unknown>][] = data?.profile
-    ? [
-        ['Personal Details', (data.profile.personalDetails as Record<string, unknown>) || {}],
-        ['Religious & Astrology', (data.profile.religiousDetails as Record<string, unknown>) || {}],
-        ['Location & Residency', (data.profile.locationDetails as Record<string, unknown>) || {}],
-        ['Education & Career', (data.profile.professionalDetails as Record<string, unknown>) || {}],
-        ['Lifestyle & Family', (data.profile.additionalDetails as Record<string, unknown>) || {}],
-        [
-          'Verification Checks',
-          (data.profile.verificationFlags as Record<string, unknown>) || {
-            photoVerified: (data.profile as Record<string, unknown>).photoVerified ? 'Yes' : 'No',
-            idVerified: (data.profile as Record<string, unknown>).idVerified ? 'Yes' : 'No',
-          },
-        ],
-      ]
-    : [];
+  const reasonOptions = REASON_CODES;
+  const reasonChosen = reasonCode !== '';
+  const changesAllowed =
+    reasonChosen &&
+    CHANGES_REASON_CODES.includes(reasonCode as ReasonCode) &&
+    notes.trim().length > 0 &&
+    sections.length > 0;
 
   return (
     <div className="min-h-screen bg-black text-white px-4 py-8 md:px-10">
-      <div className="mx-auto max-w-6xl space-y-6">
-        {/* Navigation & Actions Top Bar */}
+      <div className="mx-auto max-w-7xl space-y-6">
         <div className="flex items-center justify-between">
           <Button
             variant="outline"
@@ -102,175 +143,244 @@ export function ReviewPage({ token }: ReviewPageProps) {
             className="gap-2 border-neutral-800 text-neutral-300 hover:bg-neutral-900 hover:text-white"
           >
             <ArrowLeft className="h-4 w-4" />
-            <span>Back to Queue</span>
+            <span>Dashboard</span>
           </Button>
-          <div className="flex items-center gap-2">
-            <span className="rounded border border-neutral-800 bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-400">
-              AUDIT MODE
-            </span>
-          </div>
+          <span className="rounded border border-neutral-800 bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-400">
+            AUDIT MODE
+          </span>
         </div>
 
         {error ? (
-          <div className="flex items-center gap-2 rounded-md border border-neutral-700 bg-neutral-900 p-4 text-xs text-neutral-200">
+          <div
+            role="alert"
+            className="flex items-center gap-2 rounded-md border border-neutral-700 bg-neutral-900 p-4 text-xs text-neutral-200"
+          >
             <AlertCircle className="h-4 w-4 shrink-0 text-white" />
             <span>{error}</span>
           </div>
         ) : null}
 
-        {data ? (
-          <>
-            {/* Header Profile Summary */}
-            <Card className="border-neutral-800 bg-neutral-950/80 shadow-elevated">
-              <CardContent className="p-6">
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <h1 className="text-2xl font-bold tracking-tight text-white">
-                        {data.profile.user.name}
-                      </h1>
-                      <Badge variant="outline" className="font-mono text-xs">
-                        {data.profile.profileUid ?? 'NO UID ASSIGNED'}
-                      </Badge>
-                      <Badge variant="pending" className="text-xs">
-                        {data.profile.user.accountStatus}
-                      </Badge>
+        <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
+          <Card className="border-neutral-800 bg-neutral-950/80" data-testid="review-queue">
+            <CardHeader className="border-b border-neutral-800/60 pb-3">
+              <CardTitle className="text-sm font-medium uppercase tracking-wider text-neutral-400">
+                Queue · oldest first
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 pt-4">
+              {queue.length === 0 ? (
+                <p className="text-xs italic text-neutral-500">Nothing is awaiting review.</p>
+              ) : (
+                queue.map((item) => (
+                  <button
+                    key={item.userId}
+                    type="button"
+                    data-testid="queue-row"
+                    onClick={() => navigate(`/profiles/${item.userId}`)}
+                    className={`w-full rounded-md border p-3 text-left text-xs transition-colors hover:border-neutral-600 ${
+                      item.userId === userId
+                        ? 'border-white bg-neutral-900'
+                        : 'border-neutral-800 bg-neutral-950'
+                    }`}
+                  >
+                    <div className="font-medium text-white">{item.name}</div>
+                    <div className="mt-0.5 font-mono text-neutral-500">
+                      {item.profileUid ?? 'No UID'} · {new Date(item.submittedAt).toLocaleString()}
                     </div>
+                    <div className="mt-2">
+                      <SlaBadge state={item.slaState} remainingHours={item.slaRemainingHours} />
+                    </div>
+                  </button>
+                ))
+              )}
+            </CardContent>
+          </Card>
 
-                    <div className="flex flex-wrap items-center gap-4 text-xs text-neutral-400">
-                      <div className="flex items-center gap-1.5">
-                        <Mail className="h-3.5 w-3.5 text-neutral-500" />
-                        <span>{data.profile.user.email}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <Phone className="h-3.5 w-3.5 text-neutral-500" />
-                        <span>{data.profile.user.mobile}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <User className="h-3.5 w-3.5 text-neutral-500" />
-                        <span className="capitalize">Created by: {data.profile.user.profileCreatedBy ?? 'Self'}</span>
-                      </div>
-                    </div>
+          {workspace ? (
+            <div className="space-y-6" data-testid="workspace">
+              <Card className="border-neutral-800 bg-neutral-950/80">
+                <CardContent className="space-y-3 p-6">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <h1 className="text-2xl font-bold tracking-tight">{workspace.name}</h1>
+                    <Badge variant="outline" className="font-mono text-xs">
+                      {workspace.profileUid ?? 'NO UID ASSIGNED'}
+                    </Badge>
+                    <Badge
+                      variant={workspace.ageCheck === 'pass' ? 'approved' : 'destructive'}
+                      data-testid="age-check"
+                    >
+                      Age check: {workspace.ageCheck}
+                    </Badge>
                   </div>
-
-                  <div className="flex flex-col items-start md:items-end gap-1.5">
-                    <span className="text-xs uppercase tracking-wider text-neutral-400">Completeness</span>
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 w-28 overflow-hidden rounded-full bg-neutral-800">
-                        <div
-                          className="h-full bg-white transition-all"
-                          style={{ width: `${Math.min(data.profile.profileComplete, 100)}%` }}
-                        />
-                      </div>
-                      <span className="font-mono text-sm font-semibold text-white">
-                        {data.profile.profileComplete}%
-                      </span>
+                  <dl className="grid gap-3 text-xs sm:grid-cols-4">
+                    <div>
+                      <dt className="text-neutral-500">Date of birth</dt>
+                      <dd data-testid="dob">{workspace.dateOfBirth ?? '—'}</dd>
                     </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                    <div>
+                      <dt className="text-neutral-500">Age</dt>
+                      <dd data-testid="age">{workspace.age ?? '—'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-neutral-500">Document type</dt>
+                      <dd>{workspace.documentType ?? '—'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-neutral-500">ID number</dt>
+                      <dd className="font-mono" data-testid="masked-id">
+                        {workspace.idNumberMasked ?? '—'}
+                      </dd>
+                    </div>
+                  </dl>
+                </CardContent>
+              </Card>
 
-            {/* Profile Detail Sections Bento Grid */}
-            <div className="grid gap-5 md:grid-cols-2">
-              {sections.map(([title, values]) => (
-                <Card
-                  key={title}
-                  className="border-neutral-800 bg-neutral-950/80 shadow-subtle"
-                >
-                  <CardHeader className="border-b border-neutral-800/60 pb-3">
-                    <CardTitle className="text-sm font-medium uppercase tracking-wider text-neutral-400">
-                      {title}
+              <div className="grid gap-5 md:grid-cols-2">
+                <Card className="border-neutral-800 bg-neutral-950/80">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm uppercase tracking-wider text-neutral-400">
+                      Member photo
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="pt-4">
-                    {Object.entries(values || {}).length === 0 ? (
-                      <p className="py-2 text-xs italic text-neutral-500">
-                        No entries recorded for this section.
-                      </p>
-                    ) : (
-                      <div className="space-y-3 text-xs">
-                        {Object.entries(values || {}).map(([key, value]) => (
-                          <div
-                            key={key}
-                            className="flex items-center justify-between gap-4 border-b border-neutral-900 pb-2.5 last:border-0 last:pb-0"
-                          >
-                            <span className="capitalize text-neutral-400">
-                              {key.replace(/([A-Z])/g, ' $1')}
-                            </span>
-                            <span className="text-right font-medium text-white max-w-[60%] truncate">
-                              {Array.isArray(value)
-                                ? value.join(', ') || '—'
-                                : typeof value === 'boolean'
-                                ? value ? 'Yes' : 'No'
-                                : String(value ?? '—')}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                  <CardContent>
+                    <img
+                      data-testid="photo"
+                      src={workspace.photo.url}
+                      alt={`Photo submitted by ${workspace.name}`}
+                      className="max-h-96 w-full rounded-md object-contain"
+                    />
                   </CardContent>
                 </Card>
-              ))}
-            </div>
+                <Card className="border-neutral-800 bg-neutral-950/80">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm uppercase tracking-wider text-neutral-400">
+                      Government ID
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {idDocument?.contentType === 'application/pdf' ? (
+                      <iframe
+                        data-testid="id-document"
+                        src={idDocument.url}
+                        title="Government ID"
+                        className="h-96 w-full rounded-md"
+                      />
+                    ) : idDocument ? (
+                      <img
+                        data-testid="id-document"
+                        src={idDocument.url}
+                        alt={`ID document submitted by ${workspace.name}`}
+                        className="max-h-96 w-full rounded-md object-contain"
+                      />
+                    ) : null}
+                  </CardContent>
+                </Card>
+              </div>
 
-            {/* Moderation Actions Card */}
-            <Card className="border-neutral-800 bg-neutral-950/80 shadow-elevated">
-              <CardHeader className="pb-3">
-                <div className="flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-white" />
-                  <CardTitle className="text-base font-semibold text-white">
-                    Moderation Decision
-                  </CardTitle>
-                </div>
-                <CardDescription className="text-xs text-neutral-400">
-                  Approving activates candidate visibility in match feeds. Rejection flags the account and sends feedback to the user.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-medium uppercase tracking-wider text-neutral-400">
-                    Rejection Feedback (Required if rejecting)
+              <Card className="border-neutral-800 bg-neutral-950/80">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-4 w-4" />
+                    <CardTitle className="text-base font-semibold">Decision</CardTitle>
+                  </div>
+                  <CardDescription className="text-xs text-neutral-400">
+                    Reject and Request changes need a reason code. Request changes also needs
+                    a note and at least one flagged section.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <label className="block space-y-1.5 text-xs uppercase tracking-wider text-neutral-400">
+                    Reason code
+                    <select
+                      data-testid="reason-code"
+                      className={selectClass}
+                      value={reasonCode}
+                      onChange={(event) => setReasonCode(event.target.value as ReasonCode | '')}
+                    >
+                      <option value="">Select a reason…</option>
+                      {reasonOptions.map((code) => (
+                        <option key={code} value={code}>
+                          {code}
+                        </option>
+                      ))}
+                    </select>
                   </label>
-                  <Textarea
-                    value={reason}
-                    onChange={(event) => setReason(event.target.value)}
-                    placeholder="E.g., Incomplete address details or unclear identity documents..."
-                    rows={3}
-                  />
-                </div>
 
-                <Separator className="bg-neutral-800" />
+                  <label className="block space-y-1.5 text-xs uppercase tracking-wider text-neutral-400">
+                    Notes ({notes.length}/{NOTES_MAX})
+                    <Textarea
+                      data-testid="notes"
+                      value={notes}
+                      maxLength={NOTES_MAX}
+                      onChange={(event) => setNotes(event.target.value)}
+                      rows={3}
+                    />
+                  </label>
 
-                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                  <Button
-                    variant="outline"
-                    disabled={actionLoading}
-                    onClick={() => void reject()}
-                    className="gap-2 border-neutral-700 hover:bg-neutral-900 hover:text-white"
-                  >
-                    <X className="h-4 w-4" />
-                    <span>Reject Profile</span>
-                  </Button>
-                  <Button
-                    variant="default"
-                    disabled={actionLoading}
-                    onClick={() => void approve()}
-                    className="gap-2"
-                  >
-                    <Check className="h-4 w-4" />
-                    <span>Approve & Activate Profile</span>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </>
-        ) : (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <Clock className="h-8 w-8 animate-spin text-neutral-500" />
-            <p className="mt-4 text-sm text-neutral-400">Loading applicant record...</p>
-          </div>
-        )}
+                  <fieldset className="space-y-1.5">
+                    <legend className="text-xs uppercase tracking-wider text-neutral-400">
+                      Sections to fix (request changes)
+                    </legend>
+                    <div className="flex flex-wrap gap-3 text-xs">
+                      {SECTIONS.map((section) => (
+                        <label key={section} className="flex items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            data-testid={`section-${section}`}
+                            checked={sections.includes(section)}
+                            onChange={() => toggleSection(section)}
+                          />
+                          {section}
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+
+                  <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                    <Button
+                      variant="outline"
+                      data-testid="decision-reject"
+                      disabled={busy || !reasonChosen}
+                      onClick={() => void submit('reject')}
+                      className="gap-2 border-neutral-700"
+                    >
+                      <X className="h-4 w-4" />
+                      <span>Reject</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      data-testid="decision-request-changes"
+                      disabled={busy || !changesAllowed}
+                      onClick={() => void submit('requestChanges')}
+                      className="gap-2 border-neutral-700"
+                    >
+                      <MessageSquareWarning className="h-4 w-4" />
+                      <span>Request changes</span>
+                    </Button>
+                    <Button
+                      data-testid="decision-approve"
+                      disabled={busy}
+                      onClick={() => void submit('approve')}
+                      className="gap-2"
+                    >
+                      <Check className="h-4 w-4" />
+                      <span>Approve</span>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          ) : userId ? (
+            <div className="flex flex-col items-center justify-center py-24 text-center">
+              <Clock className="h-8 w-8 animate-spin text-neutral-500" />
+              <p className="mt-4 text-sm text-neutral-400">Loading submission...</p>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-24 text-sm text-neutral-500">
+              Select a submission from the queue.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

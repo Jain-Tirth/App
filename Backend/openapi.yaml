@@ -459,13 +459,207 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  /admin/profiles/pending:
+    get:
+      tags: [Admin review]
+      summary: Review queue, oldest submission first
+      description: |
+        Members whose photo and ID are both uploaded and whose case is in
+        `needsReview`. `slaRemainingHours` counts business hours only (see
+        `REVIEW_*` settings) and may be negative. `slaState` is `ok` under 36
+        business hours, `atRisk` from 36, `overdue` from 48. The SLA is an
+        internal admin measure and is never sent to members.
+      security:
+        - adminBearerAuth: []
+      responses:
+        '200':
+          description: The queue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewQueue'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+  /admin/profiles/{userId}:
+    get:
+      tags: [Admin review]
+      summary: Review workspace for one member
+      description: |
+        Photo (short-lived signed URL), ID document (reference to the audited
+        `id-document` endpoint), document type, ID number masked to its last 4
+        characters, member-entered name and date of birth, computed age and the
+        age-gate result (men 21, women 18). Viewing does not change any status.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: The workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewWorkspace'
+        '400':
+          $ref: '#/components/responses/AdminBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/AdminNotFound'
+  /admin/profiles/{userId}/id-document:
+    get:
+      tags: [Admin review]
+      summary: Open the member's ID document
+      description: |
+        Returns a short-lived signed URL (10 minutes). Every call writes an
+        `AdminAuditLog` row with action `VIEW_DOCUMENT`, the admin id, request
+        id, IP and user agent.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Signed URL
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, expiresAt, contentType]
+                properties:
+                  url:
+                    type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+                  contentType:
+                    type: string
+        '400':
+          $ref: '#/components/responses/AdminBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/AdminNotFound'
+  /admin/profiles/{userId}/approve:
+    patch:
+      tags: [Admin review]
+      summary: Approve the submission
+      description: |
+        `reasonCode` is optional but, when sent, must be one of the eleven
+        codes. Recorded with the audit row in one transaction. Allowed only when
+        the member is pending and the case is in `needsReview`.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewDecisionRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/ReviewDecisionDone'
+        '400':
+          $ref: '#/components/responses/AdminBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/AdminNotFound'
+        '409':
+          $ref: '#/components/responses/AdminInvalidTransition'
+  /admin/profiles/{userId}/reject:
+    patch:
+      tags: [Admin review]
+      summary: Reject the submission
+      description: |
+        `reasonCode` is required (any of the eleven codes); a missing or unknown
+        code is 400 `INVALID_REASON_CODE` with the allowed values in `details`.
+        This replaces the earlier free-text `reason` field. `notes` is at most
+        500 characters.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewDecisionRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/ReviewDecisionDone'
+        '400':
+          $ref: '#/components/responses/AdminBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/AdminNotFound'
+        '409':
+          $ref: '#/components/responses/AdminInvalidTransition'
+  /admin/profiles/{userId}/request-changes:
+    patch:
+      tags: [Admin review]
+      summary: Ask the member to fix flagged sections
+      description: |
+        `reasonCode` is required and may not be `under-age` or
+        `duplicate-account` (400 `INVALID_REASON_CODE`). `notes` (1 to 500
+        characters after trim) and `sections` (at least one of `step-1` to
+        `step-5`) are required. The member sees the decision in
+        `GET /profiles/me` under `profile.user.reviewDecision`.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewDecisionRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/ReviewDecisionDone'
+        '400':
+          $ref: '#/components/responses/AdminBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/AdminNotFound'
+        '409':
+          $ref: '#/components/responses/AdminInvalidTransition'
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    adminBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token from POST /admin/login (admin secret)
   parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     MediaId:
       name: mediaId
       in: path
@@ -474,6 +668,36 @@ components:
         type: string
         format: uuid
   responses:
+    AdminBadRequest:
+      description: '`VALIDATION_ERROR` (malformed `userId`, unknown or forbidden body field, notes over 500 characters, empty notes or sections) or `INVALID_REASON_CODE` (allowed values in `details.allowed`)'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    AdminForbidden:
+      description: A valid member token; the admin role is required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    AdminNotFound:
+      description: '`NOT_FOUND`: no such member or no submission'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    AdminInvalidTransition:
+      description: '`INVALID_STATUS_TRANSITION`: the profile is not in review (already decided, blocked or never submitted); nothing was written'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ReviewDecisionDone:
+      description: Decision recorded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReviewDecisionResult'
     KycBadRequest:
       description: '`VALIDATION_ERROR`: unknown field or malformed value, with field-level `details.issues`'
       content:
@@ -702,6 +926,139 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ConsentRecord'
+    ReviewReasonCode:
+      type: string
+      enum:
+        - unreadable-document
+        - expired-document
+        - name-mismatch
+        - photo-mismatch
+        - under-age
+        - prohibited-content
+        - incomplete-profile
+        - duplicate-account
+        - suspicious-activity
+        - terms-violation
+        - other
+    ReviewQueue:
+      type: object
+      required: [total, profiles]
+      properties:
+        total:
+          type: integer
+        profiles:
+          type: array
+          items:
+            type: object
+            required: [userId, profileUid, name, submittedAt, slaRemainingHours, slaState]
+            properties:
+              userId:
+                type: string
+                format: uuid
+              profileUid:
+                type: string
+                nullable: true
+              name:
+                type: string
+              submittedAt:
+                type: string
+                format: date-time
+              slaRemainingHours:
+                type: number
+                description: Business hours left; negative when overdue
+              slaState:
+                type: string
+                enum: [ok, atRisk, overdue]
+    ReviewWorkspace:
+      type: object
+      required: [userId, name, ageCheck, photo, idDocument]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        profileUid:
+          type: string
+          nullable: true
+        name:
+          type: string
+        dateOfBirth:
+          type: string
+          format: date
+          nullable: true
+        age:
+          type: integer
+          nullable: true
+        ageCheck:
+          type: string
+          enum: [pass, fail]
+        accountStatus:
+          type: string
+        kycStatus:
+          type: string
+          nullable: true
+        submittedAt:
+          type: string
+          format: date-time
+          nullable: true
+        documentType:
+          type: string
+          nullable: true
+        idNumberMasked:
+          type: string
+          nullable: true
+          example: '****9012'
+        photo:
+          type: object
+          required: [url, expiresAt, contentType]
+          properties:
+            url:
+              type: string
+            expiresAt:
+              type: string
+              format: date-time
+            contentType:
+              type: string
+        idDocument:
+          type: object
+          required: [href, contentType]
+          properties:
+            href:
+              type: string
+              description: Audited endpoint that returns the signed URL
+            contentType:
+              type: string
+    ReviewDecisionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reasonCode:
+          $ref: '#/components/schemas/ReviewReasonCode'
+        notes:
+          type: string
+          maxLength: 500
+        sections:
+          type: array
+          items:
+            type: string
+            enum: [step-1, step-2, step-3, step-4, step-5]
+    ReviewDecisionResult:
+      type: object
+      required: [message, userId, decision, statusBefore, statusAfter]
+      properties:
+        message:
+          type: string
+        userId:
+          type: string
+          format: uuid
+        decision:
+          type: string
+          enum: [approve, reject, requestChanges]
+        reasonCode:
+          $ref: '#/components/schemas/ReviewReasonCode'
+        statusBefore:
+          type: string
+        statusAfter:
+          type: string
     ErrorEnvelope:
       type: object
       required: [code, message, details, requestId]

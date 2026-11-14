@@ -29,7 +29,10 @@ export type KycEvent =
   | 'start'
   | 'documentAttached'
   | 'allDocumentsAttached'
-  | 'restart';
+  | 'restart'
+  | 'approve'
+  | 'reject'
+  | 'requestChanges';
 
 /** 10 MB, inclusive. */
 export const KYC_MAX_FILE_BYTES = 10 * 1024 * 1024;

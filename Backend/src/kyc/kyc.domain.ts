@@ -22,6 +22,9 @@ const TRANSITIONS: Record<KycEvent, Partial<Record<KycStatus, KycStatus>>> = {
     documentUploaded: 'needsReview',
   },
   restart: { failed: 'consentGiven', changesNeeded: 'consentGiven' },
+  approve: { needsReview: 'approved' },
+  reject: { needsReview: 'failed' },
+  requestChanges: { needsReview: 'changesNeeded' },
 };
 
 /**

@@ -1,8 +1,10 @@
 import type {
   AdminLoginResponse,
   DashboardStats,
+  DecisionBody,
   PendingProfile,
-  ReviewProfileResponse,
+  ReviewWorkspace,
+  SignedDocument,
 } from './types';
 
 const API_BASE = 'http://localhost:3000/api/v1';
@@ -29,6 +31,19 @@ async function request<T>(
   return response.json() as Promise<T>;
 }
 
+function decide(
+  token: string,
+  userId: string,
+  action: 'approve' | 'reject' | 'request-changes',
+  body: DecisionBody,
+) {
+  return request(
+    `/admin/profiles/${userId}/${action}`,
+    { method: 'PATCH', body: JSON.stringify(body) },
+    token,
+  );
+}
+
 export const api = {
   login(email: string, password: string) {
     return request<AdminLoginResponse>('/admin/login', {
@@ -46,20 +61,24 @@ export const api = {
       token,
     );
   },
-  getProfile(token: string, userId: string) {
-    return request<ReviewProfileResponse>(`/admin/profiles/${userId}`, {}, token);
+  getWorkspace(token: string, userId: string) {
+    return request<ReviewWorkspace>(`/admin/profiles/${userId}`, {}, token);
   },
-  approveProfile(token: string, userId: string) {
-    return request(`/admin/profiles/${userId}/approve`, { method: 'PATCH' }, token);
-  },
-  rejectProfile(token: string, userId: string, reason: string) {
-    return request(
-      `/admin/profiles/${userId}/reject`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify({ reason }),
-      },
+  /** Each call is an audited ID view on the server. */
+  openIdDocument(token: string, userId: string) {
+    return request<SignedDocument>(
+      `/admin/profiles/${userId}/id-document`,
+      {},
       token,
     );
+  },
+  approveProfile(token: string, userId: string, body: DecisionBody = {}) {
+    return decide(token, userId, 'approve', body);
+  },
+  rejectProfile(token: string, userId: string, body: DecisionBody) {
+    return decide(token, userId, 'reject', body);
+  },
+  requestChanges(token: string, userId: string, body: DecisionBody) {
+    return decide(token, userId, 'request-changes', body);
   },
 };
