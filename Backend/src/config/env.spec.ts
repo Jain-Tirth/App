@@ -98,7 +98,10 @@ describe('env', () => {
         KYC_ENCRYPTION_KEY: key,
         STORAGE_PROVIDER: 'fake',
       });
-      delete process.env.S3_ENDPOINT;
+      process.env.S3_ENDPOINT = '';
+      process.env.AWS_ACCESS_KEY_ID = '';
+      process.env.AWS_SECRET_ACCESS_KEY = '';
+      process.env.AWS_S3_BUCKET_DOCUMENTS = '';
       process.env.AGE_MIN_MALE = '21';
       process.env.AGE_MIN_FEMALE = '18';
     });
@@ -121,7 +124,9 @@ describe('env', () => {
     });
 
     it('refuses to boot without KYC_ENCRYPTION_KEY', () => {
-      delete process.env.KYC_ENCRYPTION_KEY;
+      // An empty value, not `delete`: dotenv would refill a deleted variable
+      // from Backend/.env and make this case depend on the local file.
+      process.env.KYC_ENCRYPTION_KEY = '';
       const { validateEnv } = loadEnvModule('development');
 
       expect(() => validateEnv()).toThrow(/KYC_ENCRYPTION_KEY/);

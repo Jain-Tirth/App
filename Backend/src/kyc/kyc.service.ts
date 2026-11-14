@@ -98,10 +98,11 @@ export class KycService {
     validateDeclaredUpload(input.purpose, input.contentType, input.sizeBytes);
 
     if (input.purpose === 'kycId' && input.documentType && input.idNumber) {
+      const idNumber = normalizeIdNumber(input.idNumber);
       await this.repository.setIdDetails(verification.id, {
         documentType: input.documentType,
-        idNumberEncrypted: this.cipher.encrypt(normalizeIdNumber(input.idNumber)),
-        idNumberLast4: lastFour(normalizeIdNumber(input.idNumber)),
+        idNumberEncrypted: this.cipher.encrypt(idNumber),
+        idNumberLast4: lastFour(idNumber),
       });
     }
 
@@ -350,14 +351,19 @@ export class KycService {
       status: verification.status,
       documentType: verification.documentType,
       idNumberLast4: verification.idNumberLast4,
-      media: media.map((item) => ({
-        mediaId: item.id,
-        purpose: item.purpose,
-        contentType: item.contentType,
-        sizeBytes: item.sizeBytes,
-        // listAttachedMedia returns only attached rows, so attachedAt is set.
-        attachedAt: item.attachedAt as Date,
-      })),
+      media: media.flatMap((item) =>
+        item.attachedAt
+          ? [
+              {
+                mediaId: item.id,
+                purpose: item.purpose,
+                contentType: item.contentType,
+                sizeBytes: item.sizeBytes,
+                attachedAt: item.attachedAt,
+              },
+            ]
+          : [],
+      ),
       createdAt: verification.createdAt,
       updatedAt: verification.updatedAt,
     };
