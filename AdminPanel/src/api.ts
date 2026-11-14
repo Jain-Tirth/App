@@ -7,7 +7,9 @@ import type {
   SignedDocument,
 } from './types';
 
-const API_BASE = 'http://localhost:3000/api/v1';
+import { env } from './config/env';
+
+const API_BASE = env.apiBaseUrl;
 
 async function request<T>(
   path: string,
