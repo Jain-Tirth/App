@@ -71,6 +71,105 @@ describe('env', () => {
     }
   });
 
+  describe('storage and KYC encryption', () => {
+    const key = Buffer.alloc(32, 7).toString('base64');
+    const required = {
+      DATABASE_URL: 'postgres://example/db',
+      JWT_SECRET: 'jwt-secret',
+      JWT_REFRESH_SECRET: 'jwt-refresh-secret',
+      ADMIN_JWT_SECRET: 'admin-jwt-secret',
+    };
+    const touched = [
+      ...Object.keys(required),
+      'AGE_MIN_MALE',
+      'AGE_MIN_FEMALE',
+      'KYC_ENCRYPTION_KEY',
+      'STORAGE_PROVIDER',
+      'S3_ENDPOINT',
+      'AWS_ACCESS_KEY_ID',
+      'AWS_SECRET_ACCESS_KEY',
+      'AWS_S3_BUCKET_DOCUMENTS',
+    ];
+    let saved: Record<string, string | undefined>;
+
+    beforeEach(() => {
+      saved = Object.fromEntries(touched.map((name) => [name, process.env[name]]));
+      Object.assign(process.env, required, {
+        KYC_ENCRYPTION_KEY: key,
+        STORAGE_PROVIDER: 'fake',
+      });
+      delete process.env.S3_ENDPOINT;
+      process.env.AGE_MIN_MALE = '21';
+      process.env.AGE_MIN_FEMALE = '18';
+    });
+
+    afterEach(() => {
+      for (const name of touched) {
+        if (saved[name] === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = saved[name];
+        }
+      }
+    });
+
+    it('exposes the storage provider and the decoded encryption key', () => {
+      const { env } = loadEnvModule('development');
+
+      expect(env.storage.provider).toBe('fake');
+      expect(env.kycEncryptionKey.equals(Buffer.alloc(32, 7))).toBe(true);
+    });
+
+    it('refuses to boot without KYC_ENCRYPTION_KEY', () => {
+      delete process.env.KYC_ENCRYPTION_KEY;
+      const { validateEnv } = loadEnvModule('development');
+
+      expect(() => validateEnv()).toThrow(/KYC_ENCRYPTION_KEY/);
+    });
+
+    it('refuses to boot when KYC_ENCRYPTION_KEY is not 32 bytes of base64', () => {
+      process.env.KYC_ENCRYPTION_KEY = Buffer.alloc(16, 1).toString('base64');
+      const { validateEnv } = loadEnvModule('development');
+
+      expect(() => validateEnv()).toThrow(/KYC_ENCRYPTION_KEY/);
+    });
+
+    it('refuses to boot with an unknown STORAGE_PROVIDER', () => {
+      process.env.STORAGE_PROVIDER = 'gcs';
+      const { validateEnv } = loadEnvModule('development');
+
+      expect(() => validateEnv()).toThrow(/STORAGE_PROVIDER/);
+    });
+
+    it('refuses to boot with the s3 provider and no credentials or bucket', () => {
+      process.env.STORAGE_PROVIDER = 's3';
+      process.env.AWS_ACCESS_KEY_ID = '';
+      process.env.AWS_SECRET_ACCESS_KEY = '';
+      process.env.AWS_S3_BUCKET_DOCUMENTS = '';
+      const { validateEnv } = loadEnvModule('development');
+
+      expect(() => validateEnv()).toThrow(/AWS_ACCESS_KEY_ID/);
+    });
+
+    it('accepts the s3 provider with credentials and a bucket', () => {
+      process.env.STORAGE_PROVIDER = 's3';
+      process.env.AWS_ACCESS_KEY_ID = 'id';
+      process.env.AWS_SECRET_ACCESS_KEY = 'secret';
+      process.env.AWS_S3_BUCKET_DOCUMENTS = 'bucket';
+      const { env } = loadEnvModule('development');
+
+      expect(env.storage.provider).toBe('s3');
+      expect(env.storage.bucket).toBe('bucket');
+    });
+
+    it('refuses the fake provider in production', () => {
+      process.env.STORAGE_PROVIDER = 'fake';
+      const { validateEnv } = loadEnvModule('production');
+
+      expect(() => validateEnv()).toThrow(/STORAGE_PROVIDER/);
+    });
+  });
+
   describe('age minimums', () => {
     const required = {
       DATABASE_URL: 'postgres://example/db',

@@ -83,7 +83,15 @@ const minimumAge = (fallback: number) =>
  * The full environment contract. Every variable the API reads is declared here,
  * once, with its type, requiredness and default.
  */
-const envSchema = z.object({
+const kycEncryptionKey = z
+  .string()
+  .min(1)
+  .refine((value) => Buffer.from(value, 'base64').length === 32, {
+    message: 'must be 32 bytes encoded as base64',
+  });
+
+const envSchema = z
+  .object({
   NODE_ENV: nodeEnvSchema,
   PORT: optionalPort(3000),
   DATABASE_URL: z.string().min(1),
@@ -104,10 +112,38 @@ const envSchema = z.object({
   AWS_REGION: optionalString('ap-south-1'),
   AWS_S3_BUCKET_PHOTOS: optionalString(''),
   AWS_S3_BUCKET_DOCUMENTS: optionalString(''),
+  S3_ENDPOINT: optionalString(''),
+  STORAGE_PROVIDER: z.enum(['s3', 'fake']),
+  KYC_ENCRYPTION_KEY: kycEncryptionKey,
   FCM_PROJECT_ID: optionalString(''),
   FCM_CLIENT_EMAIL: optionalString(''),
   FCM_PRIVATE_KEY: optionalString(''),
-});
+  })
+  .superRefine((value, context) => {
+    if (value.STORAGE_PROVIDER === 'fake' && isProduction) {
+      context.addIssue({
+        code: 'custom',
+        path: ['STORAGE_PROVIDER'],
+        message: 'the fake provider is not allowed in production',
+      });
+    }
+
+    if (value.STORAGE_PROVIDER === 's3') {
+      for (const name of [
+        'AWS_ACCESS_KEY_ID',
+        'AWS_SECRET_ACCESS_KEY',
+        'AWS_S3_BUCKET_DOCUMENTS',
+      ] as const) {
+        if (value[name] === '') {
+          context.addIssue({
+            code: 'custom',
+            path: [name],
+            message: 'is required when STORAGE_PROVIDER is s3',
+          });
+        }
+      }
+    }
+  });
 
 export type AppEnv = z.infer<typeof envSchema>;
 
@@ -211,6 +247,21 @@ export const env = {
       photosBucket: parsed.AWS_S3_BUCKET_PHOTOS,
       documentsBucket: parsed.AWS_S3_BUCKET_DOCUMENTS,
     };
+  },
+  get storage() {
+    const parsed = loadEnv();
+
+    return {
+      provider: parsed.STORAGE_PROVIDER,
+      accessKeyId: parsed.AWS_ACCESS_KEY_ID,
+      secretAccessKey: parsed.AWS_SECRET_ACCESS_KEY,
+      region: parsed.AWS_REGION,
+      bucket: parsed.AWS_S3_BUCKET_DOCUMENTS,
+      endpoint: parsed.S3_ENDPOINT,
+    };
+  },
+  get kycEncryptionKey(): Buffer {
+    return Buffer.from(loadEnv().KYC_ENCRYPTION_KEY, 'base64');
   },
   get fcm() {
     const parsed = loadEnv();

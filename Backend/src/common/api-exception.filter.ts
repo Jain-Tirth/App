@@ -43,6 +43,13 @@ export class ApiExceptionFilter implements ExceptionFilter {
     };
 
     response.setHeader('x-request-id', requestId);
+
+    if (exception instanceof ApiException) {
+      for (const [name, value] of Object.entries(exception.headers)) {
+        response.setHeader(name, value);
+      }
+    }
+
     response.status(description.status).json(body);
   }
 

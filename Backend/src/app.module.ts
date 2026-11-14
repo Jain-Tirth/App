@@ -6,6 +6,7 @@ import { ApiExceptionFilter } from './common/api-exception.filter';
 import { RequestIdInterceptor } from './common/request-id.interceptor';
 import { ConsentsModule } from './consents/consents.module';
 import { DatabaseModule } from './database/database.module';
+import { KycModule } from './kyc/kyc.module';
 import { ProfilesModule } from './profiles/profiles.module';
 
 @Module({
@@ -14,6 +15,7 @@ import { ProfilesModule } from './profiles/profiles.module';
     AuthModule,
     ConsentsModule,
     DatabaseModule,
+    KycModule,
     ProfilesModule,
   ],
   providers: [

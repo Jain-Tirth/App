@@ -15,9 +15,10 @@ import {
   CONSENT_REPOSITORY,
   type ConsentRepository,
 } from './consent.repository';
-import type {
-  ConsentDocument,
-  ConsentDocumentSummary,
+import {
+  REQUIRED_CONSENT_CODES,
+  type ConsentDocument,
+  type ConsentDocumentSummary,
   ConsentInput,
   ConsentLanguage,
   ConsentRecord,
@@ -74,6 +75,20 @@ export class ConsentsService {
       language: resolveResponseLanguage(requestedLanguage),
       consents,
     };
+  }
+
+  /**
+   * True when the member holds a current, unexpired consent for every required
+   * code. Other modules (identity verification) gate on this.
+   */
+  async hasValidRequiredConsents(userId: string): Promise<boolean> {
+    const { consents } = await this.getCurrentConsents(userId);
+
+    return REQUIRED_CONSENT_CODES.every((code) => {
+      const consent = consents.find((item) => item.code === code);
+
+      return consent !== undefined && !consent.requiresReconsent;
+    });
   }
 
   /**

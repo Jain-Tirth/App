@@ -17,6 +17,8 @@ export class ApiException extends Error {
     readonly code: string,
     message: string,
     readonly details: unknown = null,
+    /** Response headers to send with the error, e.g. `Retry-After`. */
+    readonly headers: Record<string, string> = {},
   ) {
     super(message);
     this.name = 'ApiException';

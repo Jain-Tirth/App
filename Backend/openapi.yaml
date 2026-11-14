@@ -224,13 +224,274 @@ paths:
                     requestId: 7d0c6c3e-0f0b-4b0e-9f5e-2f1f3f2f1a12
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /kyc/verification:
+    post:
+      tags: [KYC]
+      summary: Create the member's manual KYC case
+      description: |
+        Requires a valid, unexpired consent for every required code (story 1).
+        The case starts as `consentGiven`. A member has at most one case.
+        The body must be empty: any field (for example `status` or `userId`) is
+        rejected with `VALIDATION_ERROR`. Responses carry
+        `Cache-Control: private, no-store`.
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Case created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KycVerification'
+        '400':
+          $ref: '#/components/responses/KycBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Consent is missing, expired or stale (`CONSENT_REQUIRED`); no case is created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: '`VERIFICATION_ALREADY_EXISTS`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    get:
+      tags: [KYC]
+      summary: Read the member's KYC case
+      description: |
+        The ID number is returned only as `idNumberLast4`. No storage key is
+        ever returned.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The case
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KycVerification'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/KycNotFound'
+  /kyc/verification/uploads:
+    post:
+      tags: [KYC]
+      summary: Request a presigned upload URL
+      description: |
+        The client uploads the bytes straight to object storage with `PUT` to
+        `uploadUrl`, sending the returned `headers`; no file bytes pass through
+        this API. The URL expires in 10 minutes. For `kycId`, `documentType` and
+        `idNumber` are required; the number is stored encrypted. `kycPhoto`
+        accepts JPEG, PNG, WebP; `kycId` also accepts PDF; at most 10 MB
+        (10485760 bytes) each.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KycUploadRequest'
+      responses:
+        '201':
+          description: Upload ticket
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KycUploadTicket'
+        '400':
+          description: |
+            `VALIDATION_ERROR` (field-level issues, e.g. an unlisted
+            `documentType`), `FILE_TOO_LARGE` (declared size above 10 MB),
+            `FILE_TYPE_NOT_ALLOWED` (type not accepted at all) or
+            `FILE_TYPE_NOT_ALLOWED_FOR_PURPOSE` (e.g. a PDF for `kycPhoto`).
+            Nothing is stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/KycNotFound'
+        '409':
+          $ref: '#/components/responses/KycInvalidTransition'
+  /kyc/verification/uploads/{mediaId}/complete:
+    post:
+      tags: [KYC]
+      summary: Confirm an upload and attach it to the case
+      description: |
+        The API checks that the object exists, that its size equals the declared
+        size, that its SHA-256 equals `checksum`, and that its leading bytes
+        (magic bytes) match the declared type and are allowed for the purpose.
+        On success the file is attached; the case becomes `documentUploaded`
+        and, once both files are present, `needsReview`. On any rejection
+        nothing is attached. Repeating the call for an attached file is a no-op.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/MediaId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KycCompleteRequest'
+      responses:
+        '200':
+          description: The updated case
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KycVerification'
+        '400':
+          description: |
+            `UPLOAD_NOT_FOUND`, `SIZE_MISMATCH`, `CHECKSUM_MISMATCH`,
+            `FILE_CONTENT_MISMATCH` (bytes are not the declared type, e.g. text
+            renamed `.jpg`), `FILE_TYPE_NOT_ALLOWED_FOR_PURPOSE` (e.g. PDF bytes
+            for `kycPhoto`) or `VALIDATION_ERROR`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/KycNotFound'
+        '409':
+          $ref: '#/components/responses/KycInvalidTransition'
+  /kyc/verification/uploads/{mediaId}:
+    delete:
+      tags: [KYC]
+      summary: Discard an upload that was never attached
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/MediaId'
+      responses:
+        '204':
+          description: Discarded
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/KycNotFound'
+        '409':
+          description: '`MEDIA_ALREADY_ATTACHED`; replace an attached file by uploading a new one'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /kyc/verification/media/{mediaId}/url:
+    get:
+      tags: [KYC]
+      summary: Get a short-lived signed read URL for an attached file
+      description: The URL expires in 10 minutes; an expired or altered URL is refused by storage with 403.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/MediaId'
+      responses:
+        '200':
+          description: Signed URL
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, expiresAt]
+                properties:
+                  url:
+                    type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/KycBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/KycNotFound'
+  /kyc/verification/restart:
+    post:
+      tags: [KYC]
+      summary: Restart a failed or changes-needed case
+      description: |
+        Allowed only from `failed` or `changesNeeded`, at most 3 times in a
+        rolling 24 hours. The fourth attempt returns 429 `RESTART_LIMIT_REACHED`
+        with a `Retry-After` header (seconds). A restart clears the uploaded
+        files and the ID details and returns the case to `consentGiven`.
+        Requires valid consent. The body must be empty.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The restarted case
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KycVerification'
+        '400':
+          $ref: '#/components/responses/KycBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: '`CONSENT_REQUIRED`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          $ref: '#/components/responses/KycNotFound'
+        '409':
+          $ref: '#/components/responses/KycInvalidTransition'
+        '429':
+          description: '`RESTART_LIMIT_REACHED`'
+          headers:
+            Retry-After:
+              description: Seconds until a restart is allowed again
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  parameters:
+    MediaId:
+      name: mediaId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   responses:
+    KycBadRequest:
+      description: '`VALIDATION_ERROR`: unknown field or malformed value, with field-level `details.issues`'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    KycNotFound:
+      description: '`VERIFICATION_NOT_FOUND` or `MEDIA_NOT_FOUND` (also returned for another member''s media id)'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    KycInvalidTransition:
+      description: '`INVALID_STATUS_TRANSITION`: the case status does not allow this action'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     Unauthorized:
       description: Missing or invalid access token
       content:
@@ -458,6 +719,103 @@ components:
             - type: 'null'
         requestId:
           type: string
+    KycVerification:
+      type: object
+      required: [id, status, documentType, idNumberLast4, media, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [consentGiven, documentUploaded, needsReview, changesNeeded, failed, approved]
+        documentType:
+          type: string
+          nullable: true
+          enum: [aadhaar, pan, drivingLicence, rationCard, voterId, other]
+        idNumberLast4:
+          type: string
+          nullable: true
+          maxLength: 4
+          description: Last 4 characters of the ID number; the full number is never returned
+        media:
+          type: array
+          items:
+            type: object
+            required: [mediaId, purpose, contentType, sizeBytes, attachedAt]
+            properties:
+              mediaId:
+                type: string
+                format: uuid
+              purpose:
+                type: string
+                enum: [kycPhoto, kycId]
+              contentType:
+                type: string
+              sizeBytes:
+                type: integer
+              attachedAt:
+                type: string
+                format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    KycUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [purpose, contentType, sizeBytes, fileName]
+      properties:
+        purpose:
+          type: string
+          enum: [kycPhoto, kycId]
+        contentType:
+          type: string
+          example: image/jpeg
+        sizeBytes:
+          type: integer
+          minimum: 1
+          description: Declared size; above 10485760 is rejected with FILE_TOO_LARGE
+        fileName:
+          type: string
+          maxLength: 255
+        documentType:
+          type: string
+          enum: [aadhaar, pan, drivingLicence, rationCard, voterId, other]
+          description: Required when purpose is kycId
+        idNumber:
+          type: string
+          description: Required when purpose is kycId; 4 to 32 letters, digits, spaces or hyphens
+    KycUploadTicket:
+      type: object
+      required: [mediaId, uploadUrl, method, headers, expiresAt]
+      properties:
+        mediaId:
+          type: string
+          format: uuid
+        uploadUrl:
+          type: string
+        method:
+          type: string
+          enum: [PUT]
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+    KycCompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [checksum]
+      properties:
+        checksum:
+          type: string
+          pattern: '^[a-fA-F0-9]{64}$'
+          description: SHA-256 of the uploaded bytes, hex
     RegisterRequest:
       type: object
       required:
