@@ -2,7 +2,10 @@ import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ProfileResponse, MatchProfile } from '../types';
 import { api } from '../api';
+import { ConsentHistory } from '../components/ConsentPanels';
+import { ErrorNotice } from '../components/ErrorNotice';
 import { Logo } from '../components/Logo';
+import { describeError, type FriendlyError } from '../errors/messages';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -58,6 +61,7 @@ export function AppPage({ token, profile, onLogout }: AppPageProps) {
   const [activeTab, setActiveTab] = useState<'matches' | 'dossier'>('matches');
   const [matches, setMatches] = useState<MatchProfile[]>([]);
   const [loadingMatches, setLoadingMatches] = useState(true);
+  const [matchesError, setMatchesError] = useState<FriendlyError | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [interestedIds, setInterestedIds] = useState<Set<string>>(new Set());
   const [selectedMatch, setSelectedMatch] = useState<MatchProfile | null>(null);
@@ -73,7 +77,7 @@ export function AppPage({ token, profile, onLogout }: AppPageProps) {
         const response = await api.getMatches(token);
         setMatches(response.matches || []);
       } catch (err) {
-        console.error('Failed to load matches', err);
+        setMatchesError(describeError(err, 'matches'));
       } finally {
         setLoadingMatches(false);
       }
@@ -283,6 +287,8 @@ export function AppPage({ token, profile, onLogout }: AppPageProps) {
                 <span>Showing {filteredMatches.length} Verified Profiles</span>
               </div>
             </div>
+
+            <ErrorNotice error={matchesError} testId="matches-error" />
 
             {/* Matches Grid */}
             {loadingMatches ? (
@@ -604,6 +610,8 @@ export function AppPage({ token, profile, onLogout }: AppPageProps) {
                 </div>
               </Card>
             </div>
+
+            <ConsentHistory token={token} />
           </div>
         )}
 

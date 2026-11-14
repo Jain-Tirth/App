@@ -9,6 +9,58 @@ export type ProfileCreatedBy =
 
 export type Gender = 'male' | 'female';
 
+export type ConsentLanguage = 'en' | 'hi' | 'gu';
+
+export interface ConsentInput {
+  code: string;
+  version: string;
+  documentHash: string;
+}
+
+export interface ConsentDocument {
+  code: string;
+  version: string;
+  hash: string;
+  effectiveAt?: string;
+  text: string;
+}
+
+export interface ConsentDocumentsResponse {
+  language: ConsentLanguage;
+  documents: ConsentDocument[];
+}
+
+export interface CurrentConsent extends ConsentDocument {
+  accepted: boolean;
+  grantedAt?: string | null;
+  expiresAt?: string | null;
+  expired: boolean;
+  requiresReconsent: boolean;
+}
+
+export interface CurrentConsentsResponse {
+  language: ConsentLanguage;
+  consents: CurrentConsent[];
+}
+
+export interface ConsentRecord {
+  id: string;
+  code: string;
+  version: string;
+  language: ConsentLanguage;
+  grantedAt: string;
+  expiresAt: string;
+  revokedAt?: string | null;
+  source: 'registration' | 'api' | 'renewal';
+}
+
+export interface ConsentRecordsResponse {
+  total: number;
+  records: ConsentRecord[];
+}
+
+export type RecordedConsent = ConsentRecord;
+
 export interface RegisterPayload {
   fullName: string;
   email: string;
@@ -16,6 +68,62 @@ export interface RegisterPayload {
   countryCode: string;
   mobileNumber: string;
   profileCreatedBy: ProfileCreatedBy;
+  language?: ConsentLanguage;
+  consents: ConsentInput[];
+}
+
+export type KycStatus =
+  | 'consentGiven'
+  | 'documentUploaded'
+  | 'needsReview'
+  | 'changesNeeded'
+  | 'failed'
+  | 'approved';
+
+export type KycPurpose = 'kycPhoto' | 'kycId';
+
+export type KycDocumentType =
+  | 'aadhaar'
+  | 'pan'
+  | 'drivingLicence'
+  | 'rationCard'
+  | 'voterId'
+  | 'other';
+
+export interface KycMedia {
+  mediaId: string;
+  purpose: KycPurpose;
+  contentType: string;
+  sizeBytes: number;
+  attachedAt: string;
+}
+
+export interface KycVerification {
+  id: string;
+  status: KycStatus;
+  documentType: KycDocumentType | null;
+  idNumberLast4: string | null;
+  media: KycMedia[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface KycUploadTicket {
+  mediaId: string;
+  uploadUrl: string;
+  method: 'PUT';
+  headers: Record<string, string>;
+  expiresAt: string;
+}
+
+export type ReviewDecisionKind = 'approved' | 'rejected' | 'changesRequested';
+
+export interface ReviewDecision {
+  decision: ReviewDecisionKind;
+  reasonCode: string | null;
+  notes: string | null;
+  sections: string[];
+  decidedAt: string | null;
 }
 
 export interface RegisterResponse {
@@ -68,6 +176,7 @@ export interface ProfileResponse {
       profileCreatedBy: string | null;
       accountStatus: string;
       rejectionReason?: string | null;
+      reviewDecision?: ReviewDecision | null;
     };
     personalDetails: Record<string, unknown>;
     religiousDetails: Record<string, unknown>;

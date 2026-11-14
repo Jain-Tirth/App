@@ -40,7 +40,8 @@ export function LandingPage() {
               Login
             </button>
             <button
-              onClick={() => navigate('/register')}
+              data-testid="landing-register"
+              onClick={() => navigate('/signup')}
               className="rounded-full bg-brand-primary px-5 py-2.5 text-sm font-semibold text-white shadow-button transition-all hover:bg-brand-primary-hover hover:shadow-lg"
             >
               Register Free
@@ -74,7 +75,8 @@ export function LandingPage() {
               {/* Primary CTAs */}
               <div className="mt-6 flex flex-wrap items-center gap-4">
                 <button
-                  onClick={() => navigate('/register')}
+                  data-testid="landing-register-hero"
+                  onClick={() => navigate('/signup')}
                   className="rounded-full bg-brand-primary px-8 py-3.5 text-base font-semibold text-white shadow-button transition-all hover:bg-brand-primary-hover hover:scale-[1.02]"
                 >
                   Register Free

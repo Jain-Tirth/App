@@ -2,19 +2,22 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ProfileResponse } from '../types';
 import { api } from '../api';
+import { hasErrorCode } from '../apiError';
+import { ErrorNotice } from '../components/ErrorNotice';
 import { Logo } from '../components/Logo';
+import { ReviewDecisionPanel } from '../components/ReviewDecisionPanel';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
+import { describeError, type FriendlyError } from '../errors/messages';
+import { reasonLabel, toReviewView, type ReviewView } from '../lib/reviewDecision';
 import {
   Clock,
   CheckCircle2,
-  XCircle,
   RefreshCw,
   LogOut,
   ArrowRight,
   ShieldCheck,
-  Edit3,
 } from 'lucide-react';
 
 interface PendingPageProps {
@@ -37,7 +40,19 @@ export function PendingPage({
   const accountStatus = profile?.profile?.user?.accountStatus ?? 'pending';
   const rejectionReason = profile?.profile?.user?.rejectionReason;
   const isApproved = accountStatus === 'active';
-  const isRejected = accountStatus === 'rejected';
+  const decisionView = toReviewView(profile?.profile?.user?.reviewDecision, accountStatus);
+  // A rejection recorded before decisions were stored still shows its reason.
+  const view: ReviewView =
+    accountStatus === 'rejected' && decisionView.kind === 'submitted'
+      ? {
+          kind: 'rejected',
+          reasonLabel: reasonLabel(null),
+          notes: rejectionReason ?? null,
+          final: false,
+          kycRestart: false,
+        }
+      : decisionView;
+  const [checkError, setCheckError] = useState<FriendlyError | null>(null);
 
   // Real-time polling every 4 seconds to detect when admin approves/rejects
   useEffect(() => {
@@ -51,13 +66,17 @@ export function PendingPage({
         if (latest.profile?.user?.accountStatus === 'active') {
           navigate('/app', { replace: true });
         }
-      } catch {
-        // Network retry silent
+      } catch (err) {
+        // Background polling retries silently, except when the session has ended.
+        if (hasErrorCode(err, 'UNAUTHORIZED')) {
+          setCheckError(describeError(err, 'profile'));
+          onLogout();
+        }
       }
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [token, isApproved, onProfileUpdate, navigate]);
+  }, [token, isApproved, onProfileUpdate, onLogout, navigate]);
 
   // If already approved on render, redirect to app
   useEffect(() => {
@@ -72,6 +91,7 @@ export function PendingPage({
   async function handleManualCheck() {
     if (!token) return;
     setChecking(true);
+    setCheckError(null);
     try {
       const latest = await api.getMyProfile(token);
       onProfileUpdate(latest);
@@ -79,6 +99,8 @@ export function PendingPage({
       if (latest.profile?.user?.accountStatus === 'active') {
         navigate('/app', { replace: true });
       }
+    } catch (err) {
+      setCheckError(describeError(err, 'profile'));
     } finally {
       setChecking(false);
     }
@@ -124,52 +146,9 @@ export function PendingPage({
               <ArrowRight className="h-4 w-4" />
             </Button>
           </div>
-        ) : isRejected ? (
-          /* ── Case 2: Rejected with feedback ── */
-          <div className="space-y-5 animate-in fade-in duration-300">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-red-50 text-red-600 ring-8 ring-red-50/50">
-              <XCircle className="h-10 w-10 text-red-600" />
-            </div>
-
-            <div>
-              <Badge variant="secondary" className="bg-red-100 text-red-800 font-semibold mb-2">
-                Action Required
-              </Badge>
-              <h1 className="font-serif text-3xl font-bold text-brand-charcoal">
-                Profile Needs Revision
-              </h1>
-              <p className="mt-2 text-sm text-brand-muted">
-                Our moderation team reviewed your submission and requested adjustments before activating your profile.
-              </p>
-            </div>
-
-            {rejectionReason && (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-left text-xs text-red-900">
-                <span className="block font-semibold uppercase tracking-wider text-red-700 mb-1">
-                  Reason for Revision:
-                </span>
-                <p className="italic">{rejectionReason}</p>
-              </div>
-            )}
-
-            <div className="pt-2 flex flex-col gap-3">
-              <Button
-                onClick={() => navigate('/register')}
-                className="w-full gap-2"
-              >
-                <Edit3 className="h-4 w-4" />
-                <span>Update Profile Details</span>
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={onLogout}
-                className="gap-2 text-brand-muted hover:text-brand-charcoal"
-              >
-                <LogOut className="h-4 w-4" />
-                <span>Sign Out</span>
-              </Button>
-            </div>
-          </div>
+        ) : view.kind === 'changesRequested' || view.kind === 'rejected' ? (
+          /* ── Case 2: The admin asked for changes or rejected ── */
+          <ReviewDecisionPanel view={view} onLogout={onLogout} />
         ) : (
           /* ── Case 3: Pending Verification ── */
           <div className="space-y-6">
@@ -186,8 +165,11 @@ export function PendingPage({
               <h1 className="font-serif text-3xl font-bold text-brand-charcoal">
                 Profile Under Review
               </h1>
-              <p className="mt-2 text-sm text-brand-muted leading-relaxed">
-                Thank you for completing your registration ({profile?.completion?.percentage ?? 100}% complete). Our administration team verifies all submissions to safeguard authenticity across our community.
+              <p
+                data-testid="pending-submitted-text"
+                className="mt-2 text-sm text-brand-muted leading-relaxed"
+              >
+                Your profile is currently under review. It will be made live once it has been approved by an admin.
               </p>
             </div>
 
@@ -212,6 +194,8 @@ export function PendingPage({
                 2. Once approved, this screen will update automatically and unlock full member access.
               </p>
             </div>
+
+            <ErrorNotice error={checkError} testId="pending-error" />
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
               <Button

@@ -1,6 +1,9 @@
 import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
+import { ErrorNotice, FieldError } from '../components/ErrorNotice';
+import { describeError, type FriendlyError } from '../errors/messages';
+import { ageInYearsUtc, dateOfBirthHint, todayUtc } from '../lib/age';
 import type { ProfileResponse } from '../types';
 import { Logo } from '../components/Logo';
 import { Button } from '../components/ui/button';
@@ -45,23 +48,16 @@ function cmToFeetInches(cm: number): string {
   return `${feet} ft ${inches} in`;
 }
 
-function calculateAge(dobString: string): number | null {
-  if (!dobString) return null;
-  const birth = new Date(dobString);
-  if (isNaN(birth.getTime())) return null;
-  const today = new Date();
-  let age = today.getFullYear() - birth.getFullYear();
-  const m = today.getMonth() - birth.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
-    age--;
-  }
-  return age > 0 ? age : null;
+function initialStep(raw: string | null): number {
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 5 ? parsed : 1;
 }
 
 export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps) {
   const navigate = useNavigate();
-  const [step, setStep] = useState(1);
-  const [error, setError] = useState('');
+  const [searchParams] = useSearchParams();
+  const [step, setStep] = useState(() => initialStep(searchParams.get('step')));
+  const [error, setError] = useState<FriendlyError | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Step 1: Personal
@@ -108,24 +104,32 @@ export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps)
     lookingFor: String(profile?.profile?.additionalDetails?.lookingFor ?? ''),
   });
 
-  const age = useMemo(() => calculateAge(step1.dateOfBirth), [step1.dateOfBirth]);
+  const age = useMemo(() => {
+    const years = ageInYearsUtc(step1.dateOfBirth);
+    return years !== null && years > 0 ? years : null;
+  }, [step1.dateOfBirth]);
   const heightFormatted = useMemo(() => cmToFeetInches(step1.heightCm), [step1.heightCm]);
+  // Client hint, re-evaluated whenever the date or the gender changes. The server stays authoritative.
+  const dobHint = useMemo(
+    () => dateOfBirthHint(step1.gender, step1.dateOfBirth),
+    [step1.gender, step1.dateOfBirth],
+  );
+  const serverDobError = error?.fields.dateOfBirth ?? null;
+
+  function formError(text: string): FriendlyError {
+    return { message: text, fields: {}, reference: null };
+  }
 
   async function saveCurrentStep() {
     setLoading(true);
-    setError('');
+    setError(null);
 
     try {
       let response: ProfileResponse;
 
       if (step === 1) {
         if (!step1.dateOfBirth) {
-          setError('Please provide your date of birth.');
-          setLoading(false);
-          return;
-        }
-        if (age !== null && age < 18) {
-          setError('Candidate must be at least 18 years old.');
+          setError(formError('Please provide your date of birth.'));
           setLoading(false);
           return;
         }
@@ -143,21 +147,21 @@ export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps)
         response = await api.saveStep2(token, step2);
       } else if (step === 3) {
         if (!step3.city.trim() || !step3.state.trim()) {
-          setError('Please enter your state and city.');
+          setError(formError('Please enter your state and city.'));
           setLoading(false);
           return;
         }
         response = await api.saveStep3(token, step3);
       } else if (step === 4) {
         if (!step4.education.trim()) {
-          setError('Please enter your highest qualification.');
+          setError(formError('Please enter your highest qualification.'));
           setLoading(false);
           return;
         }
         response = await api.saveStep4(token, step4);
       } else {
         if (!step5.aboutMyself.trim()) {
-          setError('Please share a few lines about yourself.');
+          setError(formError('Please share a few lines about yourself.'));
           setLoading(false);
           return;
         }
@@ -170,10 +174,10 @@ export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps)
         setStep((current) => current + 1);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
-        navigate('/pending');
+        navigate('/kyc');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to save step details.');
+      setError(describeError(err, step === 1 ? 'step' : 'profile'));
     } finally {
       setLoading(false);
     }
@@ -187,15 +191,6 @@ export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps)
         {/* Header with Logo and Trust Badge */}
         <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-brand-border/60">
           <Logo variant="navbar" showTagline={false} />
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5 text-xs font-medium text-brand-muted bg-white border border-brand-border px-3 py-1.5 rounded-full shadow-sm">
-              <ShieldCheck className="h-4 w-4 text-emerald-600" />
-              100% Verified Community Profiles
-            </span>
-            <Badge variant="secondary" className="font-mono text-xs">
-              {completionPct}% Complete
-            </Badge>
-          </div>
         </header>
 
         {/* Step Progress Tracker */}
@@ -274,12 +269,8 @@ export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps)
           </CardHeader>
 
           <CardContent className="space-y-6">
-            {error ? (
-              <div className="flex items-center gap-2.5 rounded-xl border border-red-200 bg-red-50 p-4 text-xs font-medium text-red-700 animate-in fade-in">
-                <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
-                <span>{error}</span>
-              </div>
-            ) : null}
+            {/* A date-of-birth problem is shown next to the field instead. */}
+            <ErrorNotice error={serverDobError ? null : error} testId="wizard-error" />
 
             {/* STEP 1: PERSONAL DETAILS */}
             {step === 1 ? (
@@ -290,7 +281,11 @@ export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps)
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       type="button"
-                      onClick={() => setStep1({ ...step1, gender: 'male' })}
+                      data-testid="wizard-gender-male"
+                      onClick={() => {
+                        setError(null);
+                        setStep1({ ...step1, gender: 'male' });
+                      }}
                       className={`flex items-center justify-center gap-2.5 p-3.5 rounded-xl border text-sm font-semibold transition-all ${
                         step1.gender === 'male'
                           ? 'border-brand-primary bg-brand-primary-soft text-brand-primary shadow-sm'
@@ -302,7 +297,11 @@ export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps)
                     </button>
                     <button
                       type="button"
-                      onClick={() => setStep1({ ...step1, gender: 'female' })}
+                      data-testid="wizard-gender-female"
+                      onClick={() => {
+                        setError(null);
+                        setStep1({ ...step1, gender: 'female' });
+                      }}
                       className={`flex items-center justify-center gap-2.5 p-3.5 rounded-xl border text-sm font-semibold transition-all ${
                         step1.gender === 'female'
                           ? 'border-brand-primary bg-brand-primary-soft text-brand-primary shadow-sm'
@@ -328,11 +327,16 @@ export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps)
                     </div>
                     <Input
                       id="dob"
+                      data-testid="wizard-dob"
                       type="date"
                       value={step1.dateOfBirth}
-                      max={new Date().toISOString().split('T')[0]}
-                      onChange={(e) => setStep1({ ...step1, dateOfBirth: e.target.value })}
+                      max={todayUtc()}
+                      onChange={(e) => {
+                        setError(null);
+                        setStep1({ ...step1, dateOfBirth: e.target.value });
+                      }}
                     />
+                    <FieldError name="dateOfBirth" text={serverDobError ?? dobHint} />
                   </div>
 
                   {/* Marital Status */}
@@ -664,7 +668,7 @@ export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps)
               variant="outline"
               disabled={step === 1 || loading}
               onClick={() => {
-                setError('');
+                setError(null);
                 setStep((curr) => Math.max(1, curr - 1));
               }}
               className="gap-2"
@@ -676,6 +680,7 @@ export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps)
             <Button
               type="button"
               disabled={loading}
+              data-testid="wizard-save"
               onClick={() => void saveCurrentStep()}
               className="gap-2 px-8"
             >

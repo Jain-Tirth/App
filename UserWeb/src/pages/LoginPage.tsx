@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import type { LoginResponse } from '../types';
 import { Card } from '../components/Card';
+import { ErrorNotice } from '../components/ErrorNotice';
 import { Logo } from '../components/Logo';
+import { describeError, type FriendlyError } from '../errors/messages';
 
 interface LoginPageProps {
   onLoggedIn: (data: LoginResponse) => void;
@@ -13,17 +15,20 @@ export function LoginPage({ onLoggedIn }: LoginPageProps) {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<FriendlyError | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    setError('');
+    setError(null);
+    setSubmitting(true);
     try {
       const response = await api.login(email, password);
       onLoggedIn(response);
       navigate('/app');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      setError(describeError(err, 'login'));
+      setSubmitting(false);
     }
   }
 
@@ -41,10 +46,12 @@ export function LoginPage({ onLoggedIn }: LoginPageProps) {
 
         <form onSubmit={submit} className="mt-6 space-y-4">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-brand-muted">
+            <label htmlFor="login-email" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted">
               Email Address
             </label>
             <input
+              id="login-email"
+              data-testid="login-email"
               className="mt-1 w-full rounded-xl border border-brand-border bg-brand-canvas px-4 py-3 text-sm text-brand-charcoal focus:border-brand-primary focus:outline-none"
               placeholder="name@example.com"
               type="email"
@@ -55,10 +62,12 @@ export function LoginPage({ onLoggedIn }: LoginPageProps) {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-brand-muted">
+            <label htmlFor="login-password" className="block text-xs font-semibold uppercase tracking-wider text-brand-muted">
               Password
             </label>
             <input
+              id="login-password"
+              data-testid="login-password"
               className="mt-1 w-full rounded-xl border border-brand-border bg-brand-canvas px-4 py-3 text-sm text-brand-charcoal focus:border-brand-primary focus:outline-none"
               placeholder="••••••••"
               type="password"
@@ -68,20 +77,23 @@ export function LoginPage({ onLoggedIn }: LoginPageProps) {
             />
           </div>
 
-          {error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
+          <ErrorNotice error={error} testId="login-error" />
 
           <button
             type="submit"
-            className="w-full rounded-xl bg-brand-primary px-5 py-3 text-sm font-semibold text-white shadow-button transition-all hover:bg-brand-primary-hover hover:scale-[1.01]"
+            data-testid="login-submit"
+            disabled={submitting}
+            className="w-full rounded-xl bg-brand-primary px-5 py-3 text-sm font-semibold text-white shadow-button transition-all hover:bg-brand-primary-hover hover:scale-[1.01] disabled:pointer-events-none disabled:opacity-50"
           >
-            Sign In
+            {submitting ? 'Signing in...' : 'Sign In'}
           </button>
 
           <p className="mt-4 text-center text-sm text-brand-muted">
             Don&apos;t have an account?{' '}
             <button
               type="button"
-              onClick={() => navigate('/register')}
+              data-testid="login-to-signup"
+              onClick={() => navigate('/signup')}
               className="font-semibold text-brand-primary hover:underline"
             >
               Register Free
