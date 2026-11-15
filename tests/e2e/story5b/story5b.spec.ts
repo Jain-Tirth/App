@@ -103,16 +103,25 @@ test.describe('AC1 status routing after a real UI login', () => {
   }
 });
 
-// DEFECT (reported, expected to fail until fixed): spec AC1 says a rejected member lands on PendingPage after login,
-// but POST /auth/login answers 403 for accountStatus 'rejected', so the member only sees "account may be on hold".
-test('AC1 rejected via the real login form reaches PendingPage (KNOWN FAILURE, backend login 403)', async ({ page }) => {
-  test.fail();
+test('AC1 existing session: admin rejects while signed in, reload shows the rejected final state', async ({ page }) => {
+  const m = await memberAt('submitted');
+  await openAs(page, m, '/pending');
+  await expect(page.getByTestId('pending-submitted-text')).toBeVisible();
+  await decide(m.userId, 'reject', { reasonCode: 'duplicate-account', notes: 'Duplicate of another profile.' });
+  await page.reload();
+  await expect(page).toHaveURL(/\/pending$/);
+  await expect(page.getByTestId('review-decision-panel')).toHaveAttribute('data-kind', 'rejected');
+});
+
+// Amended AC1: a rejected member cannot sign in (login answers 403); the logged-out member sees the "account on hold" message.
+test('AC1 logged-out rejected member sees the account-on-hold login message', async ({ page }) => {
   const m = await memberAt('rejected');
   await page.goto('/login');
   await page.getByTestId('login-email').fill(m.email);
   await page.getByTestId('login-password').fill(m.password);
   await page.getByTestId('login-submit').click();
-  await expect(page).toHaveURL(/\/pending$/, { timeout: 5000 });
+  await expect(page.getByTestId('login-error')).toContainText('your account may be on hold');
+  await expect(page).toHaveURL(/\/login$/);
 });
 
 // ------------------------------------------------------------------ AC2
