@@ -22,6 +22,13 @@ export { ApiError } from './apiError';
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 
+let notApprovedListener: (() => void) | null = null;
+
+/** Registers the one app-level reaction to PROFILE_NOT_APPROVED (refresh the profile, re-route). */
+export function onProfileNotApproved(listener: (() => void) | null): void {
+  notApprovedListener = listener;
+}
+
 function parseRetryAfter(value: string | null): number | null {
   if (!value) return null;
   const seconds = Number(value);
@@ -109,7 +116,9 @@ export async function request<T>(
   const text = await response.text();
 
   if (!response.ok) {
-    throw toApiError(response, text);
+    const apiError = toApiError(response, text);
+    if (apiError.code === 'PROFILE_NOT_APPROVED') notApprovedListener?.();
+    throw apiError;
   }
 
   if (response.status === 204 || text.trim() === '') {
@@ -179,6 +188,12 @@ export const api = {
   },
   getMatches(token: string) {
     return request<{ total: number; matches: MatchProfile[] }>('/profiles/matches', {}, token);
+  },
+  submitProfile(token: string) {
+    return request<{ status: string }>('/profiles/submit', { method: 'POST' }, token);
+  },
+  withdrawProfile(token: string) {
+    return request<{ status: string }>('/profiles/withdraw', { method: 'POST' }, token);
   },
   saveStep1(
     token: string,

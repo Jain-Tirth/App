@@ -27,6 +27,8 @@ export type ErrorContext =
   | 'kycRestart'
   | 'storage'
   | 'matches'
+  | 'submit'
+  | 'withdraw'
   | 'generic';
 
 export interface FriendlyError {
@@ -131,6 +133,12 @@ export const CODE_MESSAGES: Record<string, Builder> = {
   PROFILE_NOT_APPROVED: constant(
     'Your profile has not been approved yet. This will be available once it is approved.',
   ),
+  SUBMISSION_INCOMPLETE: constant(
+    'Your profile is not complete yet. Please finish the items listed below and submit again.',
+  ),
+  PROFILE_LOCKED_IN_REVIEW: constant(
+    'Your profile is being reviewed, so it cannot be edited right now. Choose "Withdraw to edit" on your status page if you need to make changes.',
+  ),
   USER_EXISTS: constant(ACCOUNT_CONFLICT),
 
   // Status-derived codes. Context-specific wording is applied first.
@@ -194,6 +202,22 @@ export const CONTEXT_STATUS_MESSAGES: Record<string, string> = {
   '*:401': SESSION_EXPIRED,
 };
 
+const NOT_APPROVED_FOR_ACTION =
+  'Your profile has not been approved yet, so this is not available. You can follow its progress on your status page.';
+
+/**
+ * Wording that depends on the call context as well as the code. Key:
+ * `<context>:<CODE>`. Consulted before CODE_MESSAGES.
+ */
+export const CONTEXT_CODE_MESSAGES: Record<string, string> = {
+  'submit:INVALID_STATUS_TRANSITION':
+    'Your profile cannot be submitted right now because its status has changed. Please refresh to see where it stands.',
+  'withdraw:INVALID_STATUS_TRANSITION':
+    'Your profile can no longer be withdrawn because its review has already moved on. Please refresh to see the latest status.',
+  'submit:PROFILE_NOT_APPROVED': NOT_APPROVED_FOR_ACTION,
+  'withdraw:PROFILE_NOT_APPROVED': NOT_APPROVED_FOR_ACTION,
+};
+
 function readMinimumAge(details: unknown): number | null {
   if (details && typeof details === 'object' && 'minimumAge' in details) {
     const value = (details as { minimumAge: unknown }).minimumAge;
@@ -238,6 +262,8 @@ function resolveMessage(err: ApiError, context: ErrorContext): string {
       (err.status === 401 ? CONTEXT_STATUS_MESSAGES['*:401'] : undefined);
     if (specific) return specific;
   }
+  const contextual = CONTEXT_CODE_MESSAGES[`${context}:${err.code}`];
+  if (contextual) return contextual;
   const build = CODE_MESSAGES[err.code];
   return build ? build(err) : GENERIC_MESSAGE;
 }

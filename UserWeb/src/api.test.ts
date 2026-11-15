@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, putToStorage, request } from './api';
+import { ApiError, api, onProfileNotApproved, putToStorage, request } from './api';
 
 // The env module validates import.meta.env at import time; supply a fixed base.
 vi.mock('./config/env', () => ({ env: { apiBaseUrl: 'http://api.test/api/v1' } }));
@@ -100,6 +100,51 @@ describe('request', () => {
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBe('Bearer tok');
     expect(headers['Content-Type']).toBe('application/json');
+  });
+});
+
+describe('profile submission calls', () => {
+  it('submitProfile posts to /profiles/submit with the token', async () => {
+    const fetchMock = mockFetch(() => new Response('{"status":"submitted"}', { status: 200 }));
+    await api.submitProfile('tok');
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://api.test/api/v1/profiles/submit');
+    expect(init.method).toBe('POST');
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer tok');
+  });
+
+  it('withdrawProfile posts to /profiles/withdraw', async () => {
+    const fetchMock = mockFetch(() => new Response('{"status":"draft"}', { status: 200 }));
+    await api.withdrawProfile('tok');
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://api.test/api/v1/profiles/withdraw');
+    expect(init.method).toBe('POST');
+  });
+});
+
+describe('PROFILE_NOT_APPROVED listener', () => {
+  afterEach(() => onProfileNotApproved(null));
+
+  it('notifies the listener once and still rejects with the ApiError', async () => {
+    const listener = vi.fn();
+    onProfileNotApproved(listener);
+    mockFetch(
+      () =>
+        new Response(JSON.stringify({ code: 'PROFILE_NOT_APPROVED', requestId: 'r1' }), {
+          status: 403,
+        }),
+    );
+    const error = await failure(request('/x'));
+    expect(error.code).toBe('PROFILE_NOT_APPROVED');
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('is not called for other error codes', async () => {
+    const listener = vi.fn();
+    onProfileNotApproved(listener);
+    mockFetch(() => new Response(JSON.stringify({ code: 'NOT_FOUND' }), { status: 404 }));
+    await failure(request('/x'));
+    expect(listener).not.toHaveBeenCalled();
   });
 });
 

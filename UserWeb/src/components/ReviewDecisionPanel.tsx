@@ -1,18 +1,19 @@
+import type { ReactNode } from 'react';
 import { Edit3, LogOut, XCircle, FileWarning } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import type { ReviewView } from '../lib/reviewDecision';
+import type { DecisionView } from '../lib/reviewDecision';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-
-type DecisionView = Extract<ReviewView, { kind: 'changesRequested' | 'rejected' }>;
 
 interface ReviewDecisionPanelProps {
   view: DecisionView;
   onLogout: () => void;
+  /** Extra actions shown above Sign Out, such as Submit again. */
+  children?: ReactNode;
 }
 
 /** What the admin decided, why, and where to fix it. */
-export function ReviewDecisionPanel({ view, onLogout }: ReviewDecisionPanelProps) {
+export function ReviewDecisionPanel({ view, onLogout, children }: ReviewDecisionPanelProps) {
   const navigate = useNavigate();
   const isChanges = view.kind === 'changesRequested';
   const isFinal = view.kind === 'rejected' && view.final;
@@ -25,7 +26,7 @@ export function ReviewDecisionPanel({ view, onLogout }: ReviewDecisionPanelProps
   const intro = isChanges
     ? 'Our review team asked for a few changes before your profile can go live.'
     : isFinal
-      ? 'Our review team could not approve this profile. This decision is final.'
+      ? 'Our review team could not approve this profile, and it cannot be resubmitted.'
       : 'Our review team reviewed your profile and did not approve it yet.';
 
   return (
@@ -102,6 +103,7 @@ export function ReviewDecisionPanel({ view, onLogout }: ReviewDecisionPanelProps
             <span>Update Profile Details</span>
           </Button>
         ) : null}
+        {children}
         <Button
           variant="ghost"
           onClick={onLogout}

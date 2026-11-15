@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '../apiError';
 import {
   CODE_MESSAGES,
+  CONTEXT_CODE_MESSAGES,
   CONTEXT_STATUS_MESSAGES,
   FIELD_MESSAGES,
   GENERIC_MESSAGE,
@@ -25,6 +26,8 @@ const CONTEXTS: ErrorContext[] = [
   'kycRestart',
   'storage',
   'matches',
+  'submit',
+  'withdraw',
   'generic',
 ];
 
@@ -80,6 +83,8 @@ describe('error message table', () => {
         'RESTART_LIMIT_REACHED',
         'INVALID_STATUS_TRANSITION',
         'PROFILE_NOT_APPROVED',
+        'SUBMISSION_INCOMPLETE',
+        'PROFILE_LOCKED_IN_REVIEW',
         'USER_EXISTS',
         'BAD_REQUEST',
         'UNAUTHORIZED',
@@ -104,7 +109,29 @@ describe('error message table', () => {
     }
   });
 
+  it('fixes the wording of the submission and withdrawal codes', () => {
+    expect(describeError(sample('SUBMISSION_INCOMPLETE', 422), 'submit').message).toBe(
+      'Your profile is not complete yet. Please finish the items listed below and submit again.',
+    );
+    expect(describeError(sample('PROFILE_LOCKED_IN_REVIEW', 409), 'step').message).toBe(
+      'Your profile is being reviewed, so it cannot be edited right now. Choose "Withdraw to edit" on your status page if you need to make changes.',
+    );
+    expect(describeError(sample('INVALID_STATUS_TRANSITION', 409), 'submit').message).toBe(
+      'Your profile cannot be submitted right now because its status has changed. Please refresh to see where it stands.',
+    );
+    expect(describeError(sample('INVALID_STATUS_TRANSITION', 409), 'withdraw').message).toBe(
+      'Your profile can no longer be withdrawn because its review has already moved on. Please refresh to see the latest status.',
+    );
+    expect(describeError(sample('PROFILE_NOT_APPROVED', 403), 'submit').message).toBe(
+      'Your profile has not been approved yet, so this is not available. You can follow its progress on your status page.',
+    );
+    expect(describeError(sample('PROFILE_NOT_APPROVED', 403), 'withdraw').message).toBe(
+      'Your profile has not been approved yet, so this is not available. You can follow its progress on your status page.',
+    );
+  });
+
   it('produces clean text for every context and status entry and field message', () => {
+    for (const text of Object.values(CONTEXT_CODE_MESSAGES)) expectClean(text);
     for (const text of Object.values(CONTEXT_STATUS_MESSAGES)) expectClean(text);
     for (const text of Object.values(FIELD_MESSAGES)) expectClean(text);
     expectClean(GENERIC_MESSAGE);

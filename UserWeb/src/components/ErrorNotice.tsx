@@ -26,7 +26,7 @@ export function ErrorNotice({ error, testId = 'form-error', className = '' }: Er
           {text}
         </p>
         {reference ? (
-          <p data-testid={`${testId}-reference`} className="mt-1 text-[10px] text-red-500">
+          <p data-testid={`${testId}-reference`} className="mt-1 text-xs text-red-800">
             Reference: {reference}
           </p>
         ) : null}

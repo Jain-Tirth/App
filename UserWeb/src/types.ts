@@ -126,6 +126,13 @@ export interface ReviewDecision {
   decidedAt: string | null;
 }
 
+export type ProfileReviewStatus =
+  | 'draft'
+  | 'submitted'
+  | 'approved'
+  | 'needsChanges'
+  | 'rejected';
+
 export interface RegisterResponse {
   message: string;
   userId: string;
@@ -175,6 +182,7 @@ export interface ProfileResponse {
       gender: string | null;
       profileCreatedBy: string | null;
       accountStatus: string;
+      profileReviewStatus: ProfileReviewStatus;
       rejectionReason?: string | null;
       reviewDecision?: ReviewDecision | null;
     };

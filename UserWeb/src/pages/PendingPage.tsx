@@ -1,71 +1,40 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import type { ProfileResponse } from '../types';
+import type { ProfileResponse, ProfileReviewStatus } from '../types';
 import { api } from '../api';
 import { hasErrorCode } from '../apiError';
 import { ErrorNotice } from '../components/ErrorNotice';
 import { Logo } from '../components/Logo';
 import { ReviewDecisionPanel } from '../components/ReviewDecisionPanel';
+import { SubmitForReview } from '../components/SubmitForReview';
+import { WithdrawDialog } from '../components/WithdrawDialog';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
-import { Badge } from '../components/ui/badge';
 import { describeError, type FriendlyError } from '../errors/messages';
-import { reasonLabel, toReviewView, type ReviewView } from '../lib/reviewDecision';
-import {
-  Clock,
-  CheckCircle2,
-  RefreshCw,
-  LogOut,
-  ArrowRight,
-  ShieldCheck,
-} from 'lucide-react';
+import { decisionViewFor } from '../lib/reviewDecision';
+import { allowedActions } from '../lib/profileStatus';
+import { Clock, LogOut, ShieldCheck, Undo2 } from 'lucide-react';
 
 interface PendingPageProps {
-  token: string | null;
+  token: string;
+  status: ProfileReviewStatus;
   profile: ProfileResponse | null;
   onProfileUpdate: (profile: ProfileResponse) => void;
   onLogout: () => void;
 }
 
-export function PendingPage({
-  token,
-  profile,
-  onProfileUpdate,
-  onLogout,
-}: PendingPageProps) {
-  const navigate = useNavigate();
-  const [checking, setChecking] = useState(false);
-  const [lastChecked, setLastChecked] = useState<Date>(new Date());
+const POLL_INTERVAL_MS = 4000;
 
-  const accountStatus = profile?.profile?.user?.accountStatus ?? 'pending';
-  const rejectionReason = profile?.profile?.user?.rejectionReason;
-  const isApproved = accountStatus === 'active';
-  const decisionView = toReviewView(profile?.profile?.user?.reviewDecision, accountStatus);
-  // A rejection recorded before decisions were stored still shows its reason.
-  const view: ReviewView =
-    accountStatus === 'rejected' && decisionView.kind === 'submitted'
-      ? {
-          kind: 'rejected',
-          reasonLabel: reasonLabel(null),
-          notes: rejectionReason ?? null,
-          final: false,
-          kycRestart: false,
-        }
-      : decisionView;
+export function PendingPage({ token, status, profile, onProfileUpdate, onLogout }: PendingPageProps) {
+  const [withdrawing, setWithdrawing] = useState(false);
   const [checkError, setCheckError] = useState<FriendlyError | null>(null);
+  const actions = allowedActions(status);
+  const user = profile?.profile?.user;
 
-  // Real-time polling every 4 seconds to detect when admin approves/rejects
+  // Poll so a decision, an approval or a reopen shows without a manual reload.
   useEffect(() => {
-    if (!token || isApproved) return;
-
     const interval = setInterval(async () => {
       try {
-        const latest = await api.getMyProfile(token);
-        onProfileUpdate(latest);
-        setLastChecked(new Date());
-        if (latest.profile?.user?.accountStatus === 'active') {
-          navigate('/app', { replace: true });
-        }
+        onProfileUpdate(await api.getMyProfile(token));
       } catch (err) {
         // Background polling retries silently, except when the session has ended.
         if (hasErrorCode(err, 'UNAUTHORIZED')) {
@@ -73,159 +42,92 @@ export function PendingPage({
           onLogout();
         }
       }
-    }, 4000);
-
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [token, isApproved, onProfileUpdate, onLogout, navigate]);
+  }, [token, onProfileUpdate, onLogout]);
 
-  // If already approved on render, redirect to app
-  useEffect(() => {
-    if (isApproved) {
-      const timer = setTimeout(() => {
-        navigate('/app', { replace: true });
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [isApproved, navigate]);
-
-  async function handleManualCheck() {
-    if (!token) return;
-    setChecking(true);
-    setCheckError(null);
-    try {
-      const latest = await api.getMyProfile(token);
-      onProfileUpdate(latest);
-      setLastChecked(new Date());
-      if (latest.profile?.user?.accountStatus === 'active') {
-        navigate('/app', { replace: true });
-      }
-    } catch (err) {
-      setCheckError(describeError(err, 'profile'));
-    } finally {
-      setChecking(false);
-    }
+  async function refreshProfile() {
+    onProfileUpdate(await api.getMyProfile(token));
   }
 
   return (
     <div className="mx-auto flex min-h-screen max-w-xl items-center px-4 py-12">
-      <Card className="w-full p-8 text-center sm:p-10 border-brand-border bg-white shadow-soft">
-        <div className="flex justify-center mb-6">
+      <Card
+        data-testid="pending-state"
+        data-state={status}
+        className="w-full border-brand-border bg-white p-6 text-center shadow-soft sm:p-10"
+      >
+        <div className="mb-6 flex justify-center">
           <Logo variant="navbar" showTagline={false} />
         </div>
 
-        {/* ── Case 1: Approved! ── */}
-        {isApproved ? (
-          <div className="space-y-5 animate-in fade-in zoom-in-95 duration-300">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 ring-8 ring-emerald-50/50">
-              <CheckCircle2 className="h-10 w-10 text-emerald-600 animate-bounce" />
-            </div>
-
-            <div>
-              <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 font-semibold mb-2">
-                Approval Confirmed
-              </Badge>
-              <h1 className="font-serif text-3xl font-bold text-brand-charcoal">
-                Welcome to Dhobi Matrimony!
-              </h1>
-              <p className="mt-2 text-sm text-brand-muted">
-                Your profile has been audited and approved by the administration team. You now have full access to discover community matches.
-              </p>
-            </div>
-
-            {profile?.profile?.profileUid && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-xs font-mono font-semibold text-emerald-900">
-                Permanent Reference UID: {profile.profile.profileUid}
-              </div>
-            )}
-
-            <Button
-              onClick={() => navigate('/app', { replace: true })}
-              className="w-full gap-2 text-base py-6 shadow-glow"
-            >
-              <span>Enter Community App</span>
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          </div>
-        ) : view.kind === 'changesRequested' || view.kind === 'rejected' ? (
-          /* ── Case 2: The admin asked for changes or rejected ── */
-          <ReviewDecisionPanel view={view} onLogout={onLogout} />
+        {status === 'needsChanges' ? (
+          <ReviewDecisionPanel
+            view={decisionViewFor('needsChanges', user?.reviewDecision, user?.rejectionReason)}
+            onLogout={onLogout}
+          >
+            {actions.submitAgain ? (
+              <SubmitForReview token={token} label="Submit again" onSubmitted={refreshProfile} />
+            ) : null}
+          </ReviewDecisionPanel>
+        ) : status === 'rejected' ? (
+          <ReviewDecisionPanel
+            view={decisionViewFor('rejected', user?.reviewDecision, user?.rejectionReason)}
+            onLogout={onLogout}
+          />
         ) : (
-          /* ── Case 3: Pending Verification ── */
           <div className="space-y-6">
             <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-brand-primary-soft text-brand-primary">
-              <Clock className="h-9 w-9 text-brand-primary animate-pulse" />
-              <div className="absolute inset-0 rounded-full border-2 border-brand-primary/30 animate-ping" />
+              <Clock className="h-9 w-9 animate-pulse text-brand-primary" />
             </div>
 
             <div>
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800 mb-3">
+              <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
                 <ShieldCheck className="h-3.5 w-3.5 text-amber-600" />
                 <span>Verification In Progress</span>
               </div>
-              <h1 className="font-serif text-3xl font-bold text-brand-charcoal">
-                Profile Under Review
-              </h1>
+              <h1 className="font-serif text-3xl font-bold text-brand-charcoal">Profile Under Review</h1>
               <p
                 data-testid="pending-submitted-text"
-                className="mt-2 text-sm text-brand-muted leading-relaxed"
+                className="mt-2 text-sm leading-relaxed text-brand-muted"
               >
                 Your profile is currently under review. It will be made live once it has been approved by an admin.
               </p>
             </div>
 
-            {profile?.profile?.profileUid && (
-              <div className="rounded-xl border border-brand-border bg-brand-canvas p-3 text-xs text-brand-charcoal font-medium">
-                Reference UID:{' '}
-                <span className="font-mono font-bold text-brand-primary">
-                  {profile.profile.profileUid}
-                </span>
-              </div>
-            )}
-
-            <div className="rounded-xl border border-brand-border/60 bg-brand-canvas/60 p-4 text-xs text-brand-muted text-left space-y-2">
-              <div className="flex items-center gap-2 text-brand-charcoal font-semibold">
-                <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />
-                <span>What happens next?</span>
-              </div>
-              <p>
-                1. Our admin checks candidate background, community details, and contact numbers.
-              </p>
-              <p>
-                2. Once approved, this screen will update automatically and unlock full member access.
-              </p>
-            </div>
-
             <ErrorNotice error={checkError} testId="pending-error" />
 
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+            <div className="flex flex-col items-center justify-center gap-3 pt-2 sm:flex-row">
+              {actions.withdraw ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  data-testid="withdraw-open"
+                  onClick={() => setWithdrawing(true)}
+                  className="w-full gap-2 sm:w-auto"
+                >
+                  <Undo2 className="h-4 w-4" />
+                  <span>Withdraw from review</span>
+                </Button>
+              ) : null}
               <Button
-                variant="outline"
-                size="sm"
-                disabled={checking}
-                onClick={() => void handleManualCheck()}
-                className="w-full sm:w-auto gap-2"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${checking ? 'animate-spin' : ''}`} />
-                <span>{checking ? 'Checking Status...' : 'Check Approval Status'}</span>
-              </Button>
-              <Button
+                type="button"
                 variant="ghost"
                 size="sm"
                 onClick={onLogout}
-                className="w-full sm:w-auto gap-2 text-brand-muted hover:text-brand-charcoal"
+                className="w-full gap-2 text-brand-muted hover:text-brand-charcoal sm:w-auto"
               >
                 <LogOut className="h-3.5 w-3.5" />
                 <span>Sign Out</span>
               </Button>
             </div>
-
-            <p className="text-[11px] text-brand-muted">
-              Auto-checking approval status in real-time (last checked:{' '}
-              {lastChecked.toLocaleTimeString()})
-            </p>
           </div>
         )}
       </Card>
+
+      {withdrawing ? (
+        <WithdrawDialog token={token} onClose={() => setWithdrawing(false)} onWithdrawn={refreshProfile} />
+      ) : null}
     </div>
   );
 }

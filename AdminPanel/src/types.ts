@@ -72,6 +72,17 @@ export interface SignedDocument {
   contentType: string;
 }
 
+export interface ReopenBody {
+  reasonCode: ReasonCode;
+  notes?: string;
+}
+
+export interface ReopenResult {
+  message: string;
+  userId: string;
+  status: string;
+}
+
 export interface DecisionBody {
   reasonCode?: ReasonCode;
   notes?: string;

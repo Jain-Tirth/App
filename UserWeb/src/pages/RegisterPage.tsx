@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
+import { hasErrorCode } from '../apiError';
 import { ErrorNotice, FieldError } from '../components/ErrorNotice';
 import { describeError, type FriendlyError } from '../errors/messages';
 import { ageInYearsUtc, dateOfBirthHint, todayUtc } from '../lib/age';
@@ -59,6 +60,7 @@ export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps)
   const [step, setStep] = useState(() => initialStep(searchParams.get('step')));
   const [error, setError] = useState<FriendlyError | null>(null);
   const [loading, setLoading] = useState(false);
+  const [lockedInReview, setLockedInReview] = useState(false);
 
   // Step 1: Personal
   const [step1, setStep1] = useState({
@@ -177,9 +179,20 @@ export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps)
         navigate('/kyc');
       }
     } catch (err) {
+      setLockedInReview(hasErrorCode(err, 'PROFILE_LOCKED_IN_REVIEW'));
       setError(describeError(err, step === 1 ? 'step' : 'profile'));
     } finally {
       setLoading(false);
+    }
+  }
+
+  /** The typed values stay on screen until the refreshed status routes the member to the review screen. */
+  async function openReviewStatus() {
+    try {
+      onProfileUpdate(await api.getMyProfile(token));
+    } catch (err) {
+      setLockedInReview(false);
+      setError(describeError(err, 'profile'));
     }
   }
 
@@ -271,6 +284,17 @@ export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps)
           <CardContent className="space-y-6">
             {/* A date-of-birth problem is shown next to the field instead. */}
             <ErrorNotice error={serverDobError ? null : error} testId="wizard-error" />
+            {lockedInReview && error ? (
+              <Button
+                type="button"
+                variant="outline"
+                data-testid="wizard-withdraw-to-edit"
+                onClick={() => void openReviewStatus()}
+                className="w-full"
+              >
+                Withdraw to edit
+              </Button>
+            ) : null}
 
             {/* STEP 1: PERSONAL DETAILS */}
             {step === 1 ? (

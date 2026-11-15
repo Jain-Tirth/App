@@ -1,6 +1,69 @@
 import { describe, expect, it } from 'vitest';
 import type { ReviewDecision } from '../types';
-import { flaggedSections, toReviewView } from './reviewDecision';
+import { decisionViewFor, flaggedSections, toReviewView } from './reviewDecision';
+
+describe('decisionViewFor', () => {
+  it('shows the stored reason, notes and sections for needsChanges', () => {
+    const view = decisionViewFor(
+      'needsChanges',
+      {
+        decision: 'changesRequested',
+        reasonCode: 'incomplete-profile',
+        notes: 'Add more.',
+        sections: ['step-2'],
+        decidedAt: null,
+      },
+      null,
+    );
+    expect(view).toMatchObject({
+      kind: 'changesRequested',
+      reasonLabel: 'Your profile is incomplete',
+      notes: 'Add more.',
+    });
+    expect(view.kind === 'changesRequested' && view.sections.map((s) => s.step)).toEqual([2]);
+  });
+
+  it('falls back to a generic changes panel when no decision is stored', () => {
+    expect(decisionViewFor('needsChanges', null, null)).toEqual({
+      kind: 'changesRequested',
+      reasonLabel: 'Your profile needs attention',
+      notes: null,
+      sections: [],
+      kycRestart: false,
+    });
+  });
+
+  it('makes a rejected profile final with no restart, using the stored reason', () => {
+    const view = decisionViewFor(
+      'rejected',
+      {
+        decision: 'rejected',
+        reasonCode: 'expired-document',
+        notes: 'Expired.',
+        sections: [],
+        decidedAt: null,
+      },
+      null,
+    );
+    expect(view).toEqual({
+      kind: 'rejected',
+      reasonLabel: 'Your document has expired',
+      notes: 'Expired.',
+      final: true,
+      kycRestart: false,
+    });
+  });
+
+  it('uses the legacy rejection reason when no decision is stored', () => {
+    expect(decisionViewFor('rejected', null, 'Not eligible')).toEqual({
+      kind: 'rejected',
+      reasonLabel: 'Your profile needs attention',
+      notes: 'Not eligible',
+      final: true,
+      kycRestart: false,
+    });
+  });
+});
 
 const decision = (overrides: Partial<ReviewDecision>): ReviewDecision => ({
   decision: 'changesRequested',

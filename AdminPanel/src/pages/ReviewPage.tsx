@@ -11,6 +11,7 @@ import {
   type Section,
   type SignedDocument,
 } from '../types';
+import { ReopenDialog } from '../components/ReopenDialog';
 import { SlaBadge } from '../components/SlaBadge';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -37,6 +38,8 @@ export function ReviewPage({ token }: ReviewPageProps) {
   const [sections, setSections] = useState<Section[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [reopenOpen, setReopenOpen] = useState(false);
+  const [reopened, setReopened] = useState(false);
 
   const loadQueue = useCallback(async () => {
     try {
@@ -57,6 +60,8 @@ export function ReviewPage({ token }: ReviewPageProps) {
     setReasonCode('');
     setNotes('');
     setSections([]);
+    setReopenOpen(false);
+    setReopened(false);
 
     if (!userId) {
       return;
@@ -123,6 +128,11 @@ export function ReviewPage({ token }: ReviewPageProps) {
         : [...current, section],
     );
   }
+
+  // The workspace reports the account status. Only a rejected profile has account status
+  // `rejected` (profile-status.ts maps one to one), so it identifies the Reopen case.
+  const profileStatus = reopened ? 'needsChanges' : (workspace?.accountStatus ?? '');
+  const canReopen = !reopened && workspace?.accountStatus === 'rejected';
 
   const reasonOptions = REASON_CODES;
   const reasonChosen = reasonCode !== '';
@@ -211,7 +221,27 @@ export function ReviewPage({ token }: ReviewPageProps) {
                     >
                       Age check: {workspace.ageCheck}
                     </Badge>
+                    <Badge variant="outline" data-testid="profile-status">
+                      {profileStatus}
+                    </Badge>
+                    {canReopen ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        data-testid="reopen-open"
+                        aria-label="Reopen profile"
+                        onClick={() => setReopenOpen(true)}
+                        className="border-neutral-700"
+                      >
+                        Reopen
+                      </Button>
+                    ) : null}
                   </div>
+                  {reopened ? (
+                    <p role="status" data-testid="reopen-success" className="text-xs text-neutral-300">
+                      Profile reopened. The member can now resubmit.
+                    </p>
+                  ) : null}
                   <dl className="grid gap-3 text-xs sm:grid-cols-4">
                     <div>
                       <dt className="text-neutral-500">Date of birth</dt>
@@ -382,6 +412,18 @@ export function ReviewPage({ token }: ReviewPageProps) {
           )}
         </div>
       </div>
+
+      {reopenOpen ? (
+        <ReopenDialog
+          token={token}
+          userId={userId}
+          onClose={() => setReopenOpen(false)}
+          onReopened={() => {
+            setReopenOpen(false);
+            setReopened(true);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

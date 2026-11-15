@@ -21,11 +21,20 @@ import {
   type KycUploadDeps,
   type UploadStage,
 } from '../lib/kycUpload';
-import type { KycDocumentType, KycPurpose, KycVerification } from '../types';
+import { allowedActions } from '../lib/profileStatus';
+import { SubmitForReview } from '../components/SubmitForReview';
+import type {
+  KycDocumentType,
+  KycPurpose,
+  KycVerification,
+  ProfileResponse,
+  ProfileReviewStatus,
+} from '../types';
 
 interface KycPageProps {
   token: string;
-  onKycChange: (verification: KycVerification | null) => void;
+  reviewStatus: ProfileReviewStatus;
+  onProfileUpdate: (profile: ProfileResponse) => void;
   onLogout: () => void;
 }
 
@@ -57,7 +66,7 @@ const TEST_KEY: Record<KycPurpose, string> = { kycPhoto: 'photo', kycId: 'id' };
 const SELECT_CLASS =
   'mt-1 w-full rounded-xl border border-brand-border bg-white px-4 py-2.5 text-sm text-brand-charcoal focus:border-brand-primary focus:outline-none';
 
-export function KycPage({ token, onKycChange, onLogout }: KycPageProps) {
+export function KycPage({ token, reviewStatus, onProfileUpdate, onLogout }: KycPageProps) {
   const navigate = useNavigate();
   const [verification, setVerification] = useState<KycVerification | null>(null);
   const [loading, setLoading] = useState(true);
@@ -73,14 +82,6 @@ export function KycPage({ token, onKycChange, onLogout }: KycPageProps) {
   const [restarting, setRestarting] = useState(false);
   const [restartError, setRestartError] = useState<FriendlyError | null>(null);
   const previews = useRef<string[]>([]);
-
-  const publish = useCallback(
-    (next: KycVerification | null) => {
-      setVerification(next);
-      onKycChange(next);
-    },
-    [onKycChange],
-  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,14 +99,14 @@ export function KycPage({ token, onKycChange, onLogout }: KycPageProps) {
           current = await api.getKycVerification(token);
         }
       }
-      publish(current);
+      setVerification(current);
     } catch (err) {
       if (hasErrorCode(err, 'CONSENT_REQUIRED')) setNeedsConsent(true);
       setError(describeError(err, 'kyc'));
     } finally {
       setLoading(false);
     }
-  }, [token, publish]);
+  }, [token]);
 
   useEffect(() => {
     void load();
@@ -188,10 +189,7 @@ export function KycPage({ token, onKycChange, onLogout }: KycPageProps) {
         (stage) => patchSlot(purpose, { stage, progress: STAGE_PROGRESS[stage] }),
       );
       patchSlot(purpose, { uploaded: true, stage: 'done', progress: 100 });
-      publish(result);
-      if (result.status === 'needsReview') {
-        navigate('/pending', { replace: true });
-      }
+      setVerification(result);
     } catch (err) {
       const original = err instanceof KycUploadFailure ? err.original : err;
       if (hasErrorCode(original, 'CONSENT_REQUIRED')) {
@@ -213,7 +211,7 @@ export function KycPage({ token, onKycChange, onLogout }: KycPageProps) {
     setRestartError(null);
     try {
       const restarted = await api.restartKycVerification(token);
-      publish(restarted);
+      setVerification(restarted);
       setSlots({ kycPhoto: EMPTY_SLOT, kycId: EMPTY_SLOT });
       setDocumentType('');
       setIdNumber('');
@@ -237,6 +235,7 @@ export function KycPage({ token, onKycChange, onLogout }: KycPageProps) {
     );
   }
 
+  const actions = allowedActions(reviewStatus);
   const status = verification?.status;
   const collecting = status === 'consentGiven' || status === 'documentUploaded';
   const attachedPurposes = new Set(verification?.media.map((media) => media.purpose));
@@ -413,7 +412,14 @@ export function KycPage({ token, onKycChange, onLogout }: KycPageProps) {
           </>
         ) : null}
 
-        {status === 'needsReview' || status === 'approved' ? (
+        {actions.submit ? (
+          <SubmitForReview
+            token={token}
+            label="Submit for review"
+            onSubmitted={async () => onProfileUpdate(await api.getMyProfile(token))}
+          />
+        ) : null}
+        {(status === 'needsReview' || status === 'approved') && !actions.submit ? (
           <button
             type="button"
             data-testid="kyc-continue"

@@ -64,6 +64,42 @@ export function flaggedSections(sections: string[]): FlaggedSection[] {
   return result;
 }
 
+export type DecisionView = Extract<ReviewView, { kind: 'changesRequested' | 'rejected' }>;
+
+/**
+ * The decision panel content for a `needsChanges` or `rejected` profile. The
+ * review status decides which panel shows; the stored decision only supplies
+ * the reason, notes and flagged sections. A rejected profile is final until an
+ * admin reopens it, so it never offers a restart or an edit.
+ */
+export function decisionViewFor(
+  status: 'needsChanges' | 'rejected',
+  decision: ReviewDecision | null | undefined,
+  rejectionReason: string | null | undefined,
+): DecisionView {
+  const stored = toReviewView(decision, 'pending');
+
+  if (status === 'needsChanges') {
+    return stored.kind === 'changesRequested'
+      ? stored
+      : {
+          kind: 'changesRequested',
+          reasonLabel: reasonLabel(null),
+          notes: null,
+          sections: [],
+          kycRestart: false,
+        };
+  }
+
+  return {
+    kind: 'rejected',
+    reasonLabel: stored.kind === 'rejected' ? stored.reasonLabel : reasonLabel(null),
+    notes: stored.kind === 'rejected' ? stored.notes : (rejectionReason ?? null),
+    final: true,
+    kycRestart: false,
+  };
+}
+
 /** Turns profile.user.reviewDecision and the account status into what the member sees. */
 export function toReviewView(
   decision: ReviewDecision | null | undefined,

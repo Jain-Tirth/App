@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { api } from './api';
+import { api, onProfileNotApproved } from './api';
 import { hasErrorCode } from './apiError';
+import { routeForStatus } from './lib/profileStatus';
 import { ConsentGate } from './components/ConsentPanels';
 import { ErrorNotice } from './components/ErrorNotice';
 import { describeError, type FriendlyError } from './errors/messages';
-import type { KycStatus, KycVerification, LoginResponse, ProfileResponse } from './types';
+import type { LoginResponse, ProfileResponse, ProfileReviewStatus } from './types';
 import { LandingPage } from './pages/LandingPage';
 import { OtpPage } from './pages/OtpPage';
 import { LoginPage } from './pages/LoginPage';
@@ -16,9 +17,6 @@ import { WizardPage } from './pages/RegisterPage';
 import { AppPage } from './pages/AppPage';
 
 const OTP_CONTEXT_KEY = 'user_otp_context';
-
-/** Statuses from which the member may wait on the review screen. */
-const SUBMITTED_KYC: KycStatus[] = ['needsReview', 'changesNeeded', 'failed', 'approved'];
 
 function readOtpContext(): OtpContext | null {
   try {
@@ -49,8 +47,6 @@ function AppRouter() {
   const [loadingInitial, setLoadingInitial] = useState(Boolean(accessToken));
   const [loadError, setLoadError] = useState<FriendlyError | null>(null);
   const [otpContext, setOtpContext] = useState<OtpContext | null>(readOtpContext);
-  const [kyc, setKyc] = useState<KycVerification | null>(null);
-  const [kycChecked, setKycChecked] = useState(false);
 
   const clearSession = useCallback(() => {
     localStorage.removeItem('user_access_token');
@@ -58,8 +54,6 @@ function AppRouter() {
     setAccessToken(null);
     setRefreshToken(null);
     setProfile(null);
-    setKyc(null);
-    setKycChecked(false);
   }, []);
 
   const loadProfile = useCallback(
@@ -90,31 +84,17 @@ function AppRouter() {
     }
   }, [accessToken, loadProfile]);
 
-  const accountStatus = profile?.profile?.user?.accountStatus;
-  const isApproved = accountStatus === 'active';
+  // The status only ever comes from GET /profiles/me. A member with no profile row yet is a draft.
+  const reviewStatus: ProfileReviewStatus = profile?.profile?.user?.profileReviewStatus ?? 'draft';
   const isProfileComplete =
     Boolean(profile?.profile) && (profile?.completion?.completedSteps ?? 0) >= 5;
 
-  // Once the profile is complete and not yet approved, the review step also needs the KYC case.
+  // Any API answer of PROFILE_NOT_APPROVED means the status moved: refresh it, and the routes redirect.
   useEffect(() => {
-    if (!accessToken || !isProfileComplete || isApproved || kycChecked) return;
-    let cancelled = false;
-    api
-      .getKycVerification(accessToken)
-      .then((verification) => {
-        if (!cancelled) setKyc(verification);
-      })
-      .catch((err: unknown) => {
-        // A missing case means the member has not started; other failures are reported by the KYC page.
-        if (!cancelled && !hasErrorCode(err, 'VERIFICATION_NOT_FOUND')) setKyc(null);
-      })
-      .finally(() => {
-        if (!cancelled) setKycChecked(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [accessToken, isProfileComplete, isApproved, kycChecked]);
+    if (!accessToken) return;
+    onProfileNotApproved(() => void loadProfile(accessToken));
+    return () => onProfileNotApproved(null);
+  }, [accessToken, loadProfile]);
 
   function handleAuth(response: LoginResponse) {
     localStorage.setItem('user_access_token', response.tokens.accessToken);
@@ -123,7 +103,6 @@ function AppRouter() {
     setOtpContext(null);
     // Hold the router on a spinner until the profile arrives, so the member lands on the right step.
     setLoadingInitial(true);
-    setKycChecked(false);
     setAccessToken(response.tokens.accessToken);
     setRefreshToken(response.tokens.refreshToken);
   }
@@ -132,13 +111,6 @@ function AppRouter() {
     sessionStorage.setItem(OTP_CONTEXT_KEY, JSON.stringify(context));
     setOtpContext(context);
   }
-
-  const handleKycChange = useCallback((verification: KycVerification | null) => {
-    setKyc(verification);
-    setKycChecked(true);
-  }, []);
-
-  const kycSubmitted = kyc !== null && SUBMITTED_KYC.includes(kyc.status);
 
   function member(token: string, page: ReactNode) {
     return <ConsentGate token={token}>{page}</ConsentGate>;
@@ -171,7 +143,9 @@ function AppRouter() {
     );
   }
 
-  const nextStepPath = isApproved ? '/app' : isProfileComplete ? '/pending' : '/register';
+  const nextStepPath = routeForStatus(reviewStatus);
+  // Members edit their profile and verification while a draft or when changes were requested.
+  const mayEdit = reviewStatus === 'draft' || reviewStatus === 'needsChanges';
 
   return (
     <Routes>
@@ -202,9 +176,13 @@ function AppRouter() {
         path="/register"
         element={
           accessToken ? (
-            member(
-              accessToken,
-              <WizardPage token={accessToken} profile={profile} onProfileUpdate={setProfile} />,
+            mayEdit ? (
+              member(
+                accessToken,
+                <WizardPage token={accessToken} profile={profile} onProfileUpdate={setProfile} />,
+              )
+            ) : (
+              <Navigate to={nextStepPath} replace />
             )
           ) : (
             <Navigate to="/login" replace />
@@ -215,14 +193,19 @@ function AppRouter() {
         path="/kyc"
         element={
           accessToken ? (
-            isApproved ? (
-              <Navigate to="/app" replace />
+            !mayEdit ? (
+              <Navigate to={nextStepPath} replace />
             ) : !isProfileComplete ? (
               <Navigate to="/register" replace />
             ) : (
               member(
                 accessToken,
-                <KycPage token={accessToken} onKycChange={handleKycChange} onLogout={clearSession} />,
+                <KycPage
+                  token={accessToken}
+                  reviewStatus={reviewStatus}
+                  onProfileUpdate={setProfile}
+                  onLogout={clearSession}
+                />,
               )
             )
           ) : (
@@ -234,19 +217,14 @@ function AppRouter() {
         path="/pending"
         element={
           accessToken ? (
-            isApproved ? (
-              <Navigate to="/app" replace />
-            ) : !isProfileComplete ? (
-              <Navigate to="/register" replace />
-            ) : !kycChecked ? (
-              <Spinner label="Checking your verification..." />
-            ) : !kycSubmitted ? (
-              <Navigate to="/kyc" replace />
+            reviewStatus === 'draft' || reviewStatus === 'approved' ? (
+              <Navigate to={nextStepPath} replace />
             ) : (
               member(
                 accessToken,
                 <PendingPage
                   token={accessToken}
+                  status={reviewStatus}
                   profile={profile}
                   onProfileUpdate={setProfile}
                   onLogout={clearSession}
@@ -262,7 +240,7 @@ function AppRouter() {
         path="/app"
         element={
           accessToken ? (
-            isApproved ? (
+            reviewStatus === 'approved' ? (
               member(
                 accessToken,
                 <AppPage
