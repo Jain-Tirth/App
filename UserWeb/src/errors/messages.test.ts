@@ -26,6 +26,7 @@ const CONTEXTS: ErrorContext[] = [
   'kycRestart',
   'storage',
   'matches',
+  'discovery',
   'submit',
   'withdraw',
   'generic',
@@ -300,6 +301,28 @@ describe('specific codes', () => {
       'kycRestart',
     ).message;
     expect(m).toContain('1 hour and 30 minutes');
+  });
+
+  it('fixes the discovery wording and has no INVALID_RANGE entry', () => {
+    expect(REQUIRED_CODES).toEqual(expect.arrayContaining(['INVALID_CURSOR', 'PROFILE_NOT_FOUND']));
+    expect(CODE_MESSAGES.INVALID_RANGE).toBeUndefined();
+    expect(describeError(sample('INVALID_CURSOR', 400), 'discovery').message).toBe(
+      'Your search results are out of date. Please start the search again.',
+    );
+    expect(describeError(sample('PROFILE_NOT_FOUND', 404), 'discovery').message).toBe(
+      "This profile isn't available.",
+    );
+    expect(describeError(sample('PROFILE_NOT_APPROVED', 403), 'discovery').message).toBe(
+      'Your profile needs to be approved before you can browse other profiles. You can follow its progress on your status page.',
+    );
+    const limitError = new ApiError({
+      code: 'VALIDATION_ERROR',
+      status: 400,
+      details: { issues: ['limit must not be greater than 50', 'property ageMin should not exist'] },
+    });
+    expect(describeError(limitError, 'discovery').message).toBe(
+      'That search could not be understood. Please clear the filters and try again.',
+    );
   });
 
   it('asks to review updated documents on CONSENT_DOCUMENT_MISMATCH', () => {

@@ -27,6 +27,7 @@ export type ErrorContext =
   | 'kycRestart'
   | 'storage'
   | 'matches'
+  | 'discovery'
   | 'submit'
   | 'withdraw'
   | 'generic';
@@ -140,6 +141,10 @@ export const CODE_MESSAGES: Record<string, Builder> = {
     'Your profile is being reviewed, so it cannot be edited right now. Choose "Withdraw to edit" on your status page if you need to make changes.',
   ),
   USER_EXISTS: constant(ACCOUNT_CONFLICT),
+  INVALID_CURSOR: constant(
+    'Your search results are out of date. Please start the search again.',
+  ),
+  PROFILE_NOT_FOUND: constant("This profile isn't available."),
 
   // Status-derived codes. Context-specific wording is applied first.
   BAD_REQUEST: constant('We could not complete that. Please check your details and try again.'),
@@ -216,6 +221,10 @@ export const CONTEXT_CODE_MESSAGES: Record<string, string> = {
     'Your profile can no longer be withdrawn because its review has already moved on. Please refresh to see the latest status.',
   'submit:PROFILE_NOT_APPROVED': NOT_APPROVED_FOR_ACTION,
   'withdraw:PROFILE_NOT_APPROVED': NOT_APPROVED_FOR_ACTION,
+  'discovery:PROFILE_NOT_APPROVED':
+    'Your profile needs to be approved before you can browse other profiles. You can follow its progress on your status page.',
+  'discovery:VALIDATION_ERROR':
+    'That search could not be understood. Please clear the filters and try again.',
 };
 
 function readMinimumAge(details: unknown): number | null {

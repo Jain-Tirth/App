@@ -8,7 +8,9 @@ import type {
   KycUploadTicket,
   KycVerification,
   LoginResponse,
-  MatchProfile,
+  DiscoveryCard,
+  DiscoverySearchResponse,
+  ProfileDetail,
   ProfileResponse,
   RecordedConsent,
   RegisterPayload,
@@ -17,6 +19,7 @@ import type {
 } from './types';
 import { env } from './config/env';
 import { ApiError } from './apiError';
+import { buildSearchParams } from './lib/discovery';
 
 export { ApiError } from './apiError';
 
@@ -186,8 +189,15 @@ export const api = {
   getMyProfile(token: string) {
     return request<ProfileResponse>('/profiles/me', {}, token);
   },
-  getMatches(token: string) {
-    return request<{ total: number; matches: MatchProfile[] }>('/profiles/matches', {}, token);
+  discoveryRecommendations(token: string) {
+    return request<{ items: DiscoveryCard[] }>('/discovery/recommendations', {}, token);
+  },
+  discoverySearch(token: string, query: Record<string, unknown>) {
+    const qs = buildSearchParams(query).toString();
+    return request<DiscoverySearchResponse>(`/discovery/search${qs ? `?${qs}` : ''}`, {}, token);
+  },
+  getProfileDetail(token: string, profileRef: string) {
+    return request<ProfileDetail>(`/profiles/${encodeURIComponent(profileRef)}`, {}, token);
   },
   submitProfile(token: string) {
     return request<{ status: string }>('/profiles/submit', { method: 'POST' }, token);

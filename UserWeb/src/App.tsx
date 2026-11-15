@@ -15,6 +15,7 @@ import { KycPage } from './pages/KycPage';
 import { PendingPage } from './pages/PendingPage';
 import { WizardPage } from './pages/RegisterPage';
 import { AppPage } from './pages/AppPage';
+import { ProfileDetailPage } from './pages/ProfileDetailPage';
 
 const OTP_CONTEXT_KEY = 'user_otp_context';
 
@@ -250,6 +251,20 @@ function AppRouter() {
                   onProfileUpdate={setProfile}
                 />,
               )
+            ) : (
+              <Navigate to={nextStepPath} replace />
+            )
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/profile/:profileRef"
+        element={
+          accessToken ? (
+            reviewStatus === 'approved' ? (
+              member(accessToken, <ProfileDetailPage token={accessToken} onLogout={clearSession} />)
             ) : (
               <Navigate to={nextStepPath} replace />
             )

@@ -195,26 +195,36 @@ export interface ProfileResponse {
   completion: ProfileCompletion;
 }
 
-export interface MatchProfile {
-  userId: string;
-  profileUid: string;
-  name: string;
-  gender: string;
-  dateOfBirth: string | null;
+/** Story 6 result card. Carries profileRef only; never an internal id or profileUid. */
+export interface DiscoveryCard {
+  profileRef: string;
+  firstName: string;
+  age: number;
+  city: string | null;
+  religion: string | null;
+  community: string | null;
+  profession: string | null;
+  photoRef: string | null;
+  verified: boolean;
+}
+
+/** Story 6 profile detail. No contact field exists in this phase. */
+export interface ProfileDetail extends DiscoveryCard {
   heightCm: number | null;
   maritalStatus: string | null;
-  religion: string | null;
-  caste: string | null;
-  subcaste: string | null;
-  city: string | null;
+  diet: string | null;
+  spokenLanguages: string[];
+  subcommunity: string | null;
   state: string | null;
   country: string | null;
   education: string | null;
-  occupation: string | null;
   employmentType: string | null;
-  annualIncomeRange: string | null;
   familyStatus: string | null;
   aboutMyself: string | null;
   lookingFor: string | null;
-  photoVerified: boolean;
+}
+
+export interface DiscoverySearchResponse {
+  items: DiscoveryCard[];
+  nextCursor: string | null;
 }
