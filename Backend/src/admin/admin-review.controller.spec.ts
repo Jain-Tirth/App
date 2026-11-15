@@ -148,7 +148,11 @@ describe('Admin review (HTTP contract)', () => {
       const res = await post(`/${U1}/reopen`, body);
 
       expect(res.status).toBe(200);
-      expect(res.body.statusAfter).toBe('failed');
+      expect(res.body).toMatchObject({
+        status: 'needsChanges',
+        statusBefore: 'rejected',
+        statusAfter: 'needsChanges',
+      });
       expect(repo.subjects[0]).toMatchObject({
         accountStatus: 'pending',
         profileReviewStatus: 'needsChanges',
@@ -157,7 +161,7 @@ describe('Admin review (HTTP contract)', () => {
       expect(repo.auditLog[0]).toMatchObject({
         adminId: ADMIN_ID,
         targetId: U1,
-        action: 'REOPEN_PROFILE',
+        action: 'reopen',
         reasonCode: 'photo-mismatch',
         notes: 'Upload a new photo',
       });

@@ -148,6 +148,8 @@ export class AdminReviewService {
     const notes = this.normaliseNotes(decision, request.notes);
     const sections = this.normaliseSections(decision, request.sections);
 
+    let profileBefore = '';
+    let profileAfter = '';
     const outcome = await this.repository.applyDecision(
       {
         userId,
@@ -159,20 +161,30 @@ export class AdminReviewService {
         audit,
         now: this.clock(),
       },
-      (state) => this.transitionFor(decision, state),
+      (state) => {
+        const transition = this.transitionFor(decision, state);
+        profileBefore = state.profileReviewStatus;
+        profileAfter = transition.profileReviewStatus;
+        return transition;
+      },
     );
 
     if (outcome.kind === 'notFound') {
       throw this.notFound();
     }
 
+    // Reopen is a profile-status operation: it reports profile review statuses.
+    // The other decisions keep reporting the KYC transition (story 4 contract).
+    const isReopen = decision === 'reopen';
+
     return {
       message: MESSAGE_BY_DECISION[decision],
       userId,
       decision,
       reasonCode,
-      statusBefore: outcome.statusBefore,
-      statusAfter: outcome.statusAfter,
+      status: profileAfter,
+      statusBefore: isReopen ? profileBefore : outcome.statusBefore,
+      statusAfter: isReopen ? profileAfter : outcome.statusAfter,
     };
   }
 

@@ -36,7 +36,7 @@ const ACTIONS = {
   approve: 'APPROVE_PROFILE',
   reject: 'REJECT_PROFILE',
   requestChanges: 'REQUEST_CHANGES',
-  reopen: 'REOPEN_PROFILE',
+  reopen: 'reopen',
 } as const;
 
 /**
@@ -111,6 +111,7 @@ export class InMemoryReviewRepository implements ReviewRepository {
       hasIdDocument: subject.idDocument !== null,
     });
     const statusBefore = subject.kycStatus ?? 'notStarted';
+    const profileBefore = subject.profileReviewStatus;
 
     subject.accountStatus = transition.accountStatus;
     subject.profileReviewStatus = transition.profileReviewStatus;
@@ -127,8 +128,11 @@ export class InMemoryReviewRepository implements ReviewRepository {
       action: ACTIONS[input.decision],
       reasonCode: input.reasonCode,
       notes: input.notes,
-      statusBefore,
-      statusAfter: transition.kycStatus,
+      statusBefore: input.decision === 'reopen' ? profileBefore : statusBefore,
+      statusAfter:
+        input.decision === 'reopen'
+          ? transition.profileReviewStatus
+          : transition.kycStatus,
       requestId: input.audit.requestId,
       ip: input.audit.ip,
       userAgent: input.audit.userAgent,

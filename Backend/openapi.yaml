@@ -751,7 +751,7 @@ paths:
         /profiles/submit` again with the earlier data kept. `reasonCode` is
         required (any of the eleven codes; 400 `INVALID_REASON_CODE` otherwise).
         `notes` is at most 500 characters. Exactly one audit row is written
-        (action `REOPEN_PROFILE`). From any other status the answer is 409
+        (action `reopen`, statusBefore `rejected`, statusAfter `needsChanges`). From any other status the answer is 409
         `INVALID_STATUS_TRANSITION` and nothing is written. `status`,
         `accountStatus`, `profileReviewStatus` and `adminId` in the body are 400.
       security:
@@ -1209,7 +1209,7 @@ components:
             enum: [step-1, step-2, step-3, step-4, step-5]
     ReviewDecisionResult:
       type: object
-      required: [message, userId, decision, statusBefore, statusAfter]
+      required: [message, userId, decision, status, statusBefore, statusAfter]
       properties:
         message:
           type: string
@@ -1218,13 +1218,18 @@ components:
           format: uuid
         decision:
           type: string
-          enum: [approve, reject, requestChanges]
+          enum: [approve, reject, requestChanges, reopen]
         reasonCode:
           $ref: '#/components/schemas/ReviewReasonCode'
+        status:
+          $ref: '#/components/schemas/ProfileReviewStatus'
+          description: Profile review status after the decision (`needsChanges` for reopen).
         statusBefore:
           type: string
+          description: KYC status before; for `reopen` the profile review status before (`rejected`).
         statusAfter:
           type: string
+          description: KYC status after; for `reopen` the profile review status after (`needsChanges`).
     ErrorEnvelope:
       type: object
       required: [code, message, details, requestId]
