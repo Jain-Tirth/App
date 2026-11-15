@@ -393,7 +393,13 @@ export async function run({ baseUrl, database }) {
       const need = ['200', '401', '403'].concat(p.includes('{userId}') ? ['404'] : []).concat(/approve|reject|request-changes/.test(p) ? ['409', '400'] : []);
       for (const c of need) if (!r[c]) missing.push(`${p} ${c}`);
       if (/\/reject$|request-changes$/.test(p) && !(op.requestBody)) missing.push(`${p} requestBody`);
-      if (!JSON.stringify(r).includes('ErrorEnvelope')) missing.push(`${p} ErrorEnvelope`);
+      // Error responses are shared $refs (components/responses/*) that wrap ErrorEnvelope; resolve them.
+      const resolve = (x) => {
+        const ref = x?.$ref; if (!ref) return x;
+        return ref.replace('#/', '').split('/').reduce((a, k) => a?.[k], doc);
+      };
+      const errs = Object.entries(r).filter(([c]) => c !== '200').map(([, v]) => JSON.stringify(resolve(v) ?? {}));
+      if (!errs.length || !errs.every((s) => s.includes('ErrorEnvelope'))) missing.push(`${p} ErrorEnvelope`);
     }
   } else {
     for (const s of paths) if (!yaml.includes(s)) missing.push(s);
