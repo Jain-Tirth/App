@@ -131,6 +131,10 @@ async function seed(database, o = {}) {
       [k.rows[0].id, userId, purpose, ct, `kyc/${userId}/${purpose}-${tag}`, at],
     );
   }
+  // Story 5: only a member who could really submit (photo and ID both present) is 'submitted'; others stay 'draft'.
+  if (o.photo !== false && o.id !== false) {
+    await database.query(`update "Users" set "profileReviewStatus"='submitted',"profileSubmittedAt"=$2 where id=$1`, [userId, at]);
+  }
   return userId;
 }
 

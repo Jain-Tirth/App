@@ -76,7 +76,7 @@ export async function run({ baseUrl, database }) {
     [randomUUID(), adminEmail, await bcrypt.hash('AdminPass123!', 10), `7${String(Date.now()).slice(-9)}`]);
   const T = (await call(baseUrl, 'POST', '/admin/login', { body: { email: adminEmail, password: 'AdminPass123!' } })).body?.accessToken;
   const R = `/admin/profiles/${m.userId}/reopen`;
-  const audit = async () => (await database.query(`select count(*)::int n from "AdminAuditLog" where "targetId"=$1 and action='REOPEN_PROFILE'`, [m.userId])).rows[0].n;
+  const audit = async () => (await database.query(`select count(*)::int n from "AdminAuditLog" where "targetId"=$1 and action='reopen'`, [m.userId])).rows[0].n;
   const notRej = await call(baseUrl, 'POST', R, { token: T, body: { reasonCode: 'other', notes: 'x' } });
   out.push(row('AC8-409-from-draft', notRej.status === 409 && notRej.body?.code === 'INVALID_STATUS_TRANSITION' && (await audit()) === 0, `reopen from draft -> ${notRej.status}`));
   const none = await call(baseUrl, 'POST', R, { body: { reasonCode: 'other' } });
@@ -90,8 +90,8 @@ export async function run({ baseUrl, database }) {
   const ok = await call(baseUrl, 'POST', R, { token: T, body: { reasonCode: 'other', notes: 'try again' } });
   const st = await status();
   out.push(row('AC8-reopen', ok.status === 200 && ok.body?.status === 'needsChanges' && st.a === 'pending' && (await audit()) === 1, `reopen -> ${ok.status} ${ok.text.slice(0, 600)}; body.status=${ok.body?.status}; db ${JSON.stringify(st)}; audit rows ${await audit()}`));
-  const aud = (await database.query(`select action,"reasonCode",notes,"adminId","statusBefore","statusAfter" from "AdminAuditLog" where "targetId"=$1 and action='REOPEN_PROFILE'`, [m.userId])).rows[0];
-  out.push(row('AC8-audit-row', !!aud && aud.reasonCode === 'other' && aud.notes === 'try again' && !!aud.adminId, `audit ${JSON.stringify(aud)} (spec says action 'reopen'; code uses REOPEN_PROFILE, matching story 4 APPROVE_PROFILE style)`));
+  const aud = (await database.query(`select action,"reasonCode",notes,"adminId","statusBefore","statusAfter" from "AdminAuditLog" where "targetId"=$1 and action='reopen'`, [m.userId])).rows[0];
+  out.push(row('AC8-audit-row', !!aud && aud.reasonCode === 'other' && aud.notes === 'try again' && !!aud.adminId, `audit ${JSON.stringify(aud)} (action 'reopen' per AC8)`));
 
   // ---- full happy path: complete the member through the DB seam, then submit over HTTP
   const complete = async (userId) => {
