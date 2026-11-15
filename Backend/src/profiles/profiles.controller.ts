@@ -10,6 +10,7 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { DiscoveryService } from '../discovery/discovery.service';
 import { SaveAdditionalDetailsDto } from './dto/save-additional-details.dto';
 import { SaveLocationDetailsDto } from './dto/save-location-details.dto';
 import { SavePersonalDetailsDto } from './dto/save-personal-details.dto';
@@ -28,6 +29,7 @@ export class ProfilesController {
   constructor(
     private readonly profilesService: ProfilesService,
     private readonly submissionService: ProfileSubmissionService,
+    private readonly discovery: DiscoveryService,
   ) {}
 
   @Get('me')
@@ -38,7 +40,7 @@ export class ProfilesController {
   @UseGuards(ApprovedProfileGuard)
   @Get('matches')
   getActiveMatches(@CurrentUser() user: AuthenticatedUser) {
-    return this.profilesService.getActiveMatches(user);
+    return this.discovery.matches(user);
   }
 
   @HttpCode(200)

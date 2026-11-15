@@ -161,6 +161,7 @@ const envSchema = z
   S3_ENDPOINT: optionalString(''),
   STORAGE_PROVIDER: z.enum(['s3', 'fake']),
   KYC_ENCRYPTION_KEY: kycEncryptionKey,
+  DAILY_RECOMMENDATIONS: optionalPositiveInt(9),
   REVIEW_SLA_HOURS: optionalPositiveInt(48),
   REVIEW_BUSINESS_DAYS: isoWeekdays('1,2,3,4,5'),
   REVIEW_BUSINESS_START: clockMinutes('09:00'),
@@ -321,6 +322,9 @@ export const env = {
   },
   get kycEncryptionKey(): Buffer {
     return Buffer.from(loadEnv().KYC_ENCRYPTION_KEY, 'base64');
+  },
+  get dailyRecommendations(): number {
+    return loadEnv().DAILY_RECOMMENDATIONS;
   },
   get review() {
     const parsed = loadEnv();

@@ -16,6 +16,8 @@ tags:
     description: Registration, OTP and sessions
   - name: Profiles
     description: Member profile steps
+  - name: Discovery
+    description: Approved-only recommendations, search and profile detail
 security:
   - bearerAuth: []
 paths:
@@ -295,11 +297,15 @@ paths:
   /profiles/matches:
     get:
       tags: [Profiles]
-      summary: Active matches (approved members only)
+      summary: Legacy list of visible members (approved members only)
+      deprecated: true
       description: |
-        Discovery and engagement endpoints are gated on the server. While the
-        member's `profileReviewStatus` is not `approved` the answer is 403
-        `PROFILE_NOT_APPROVED` with `details.status` set to the current status.
+        Kept for existing clients; use `GET /discovery/search`. It serves the
+        first page (up to 50) of the same search, with the same hard filters and
+        the same cards (no `profileUid`, no internal id, no date of birth).
+        While the member's `profileReviewStatus` is not `approved` the answer is
+        403 `PROFILE_NOT_APPROVED` with `details.status` set to the current
+        status.
       security:
         - bearerAuth: []
       responses:
@@ -309,6 +315,14 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [total, matches]
+                properties:
+                  total:
+                    type: integer
+                  matches:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DiscoveryCard'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -324,6 +338,155 @@ paths:
                     message: Your profile must be approved before you can use this feature.
                     details: { status: submitted }
                     requestId: 7d0c6c3e-0f0b-4b0e-9f5e-2f1f3f2f1a22
+  /discovery/recommendations:
+    get:
+      tags: [Discovery]
+      summary: Today's recommendations (approved members only)
+      description: |
+        At most `DAILY_RECOMMENDATIONS` (default 9) distinct approved profiles
+        per member per UTC day. The set is fixed on the first call of the day and
+        is the same on later calls; a profile hidden or no longer approved
+        afterwards is dropped. A member with no candidate gets `items: []` and
+        200. The same hard filters as search apply (self, hidden, blocked, not
+        approved, under the age gate, same gender).
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Today's recommendations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 9
+                    items:
+                      $ref: '#/components/schemas/DiscoveryCard'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ProfileNotApproved'
+  /discovery/search:
+    get:
+      tags: [Discovery]
+      summary: Search approved members (cursor pagination)
+      description: |
+        Newest profiles first. Hard filters (approved only, never the caller,
+        never a profile the caller hid, never blocked, never under the age gate,
+        opposite gender) run in the database query. Unknown query parameters are
+        rejected with 400 `VALIDATION_ERROR`; there is no age or height filter
+        and no profile-ID search. There is no rate limit on this endpoint.
+        `nextCursor` is opaque; a malformed or tampered one answers 400
+        `INVALID_CURSOR`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 512 }
+        - name: sort
+          in: query
+          required: false
+          schema: { type: string, enum: [newest], default: newest }
+        - name: maritalStatus
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [neverMarried, widower, awaitingDivorce, divorced]
+        - name: religion
+          in: query
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 50 }
+        - name: community
+          in: query
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 100 }
+        - name: state
+          in: query
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 100 }
+        - name: city
+          in: query
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 100 }
+        - name: diet
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [vegetarian, nonVegetarian, eggetarian]
+      responses:
+        '200':
+          description: One page of result cards
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DiscoveryCard'
+                  nextCursor:
+                    type: [string, 'null']
+                    description: Null on the last page.
+        '400':
+          description: |
+            `VALIDATION_ERROR` (unknown parameter, `limit` out of 1..50, bad
+            filter value, `sort` not allowed) or `INVALID_CURSOR`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ProfileNotApproved'
+  /profiles/{profileRef}:
+    get:
+      tags: [Discovery]
+      summary: Profile detail by opaque profileRef (approved members only)
+      description: |
+        Full detail of an approved, visible profile. Contact fields are never
+        returned in this phase and `profileUid` is never exposed. An unknown or
+        malformed ref, a profile that is not approved, one the caller hid, and
+        the caller's own all answer the same 404 `PROFILE_NOT_FOUND`. A
+        successful read records at most one profile view per viewer, target and
+        UTC day.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: profileRef
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-f]{32}$' }
+      responses:
+        '200':
+          description: The profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ProfileNotApproved'
+        '404':
+          description: '`PROFILE_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   /kyc/verification:
     post:
       tags: [KYC]
@@ -858,6 +1021,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
+    ProfileNotApproved:
+      description: '`PROFILE_NOT_APPROVED`; `details.status` is the caller''s current status'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     ConsentError:
       description: Unknown document, stale version/hash or missing required consent
       content:
@@ -1230,6 +1399,48 @@ components:
         statusAfter:
           type: string
           description: KYC status after; for `reopen` the profile review status after (`needsChanges`).
+    DiscoveryCard:
+      type: object
+      additionalProperties: false
+      required: [profileRef, firstName, age, city, religion, community, profession, photoRef, verified]
+      properties:
+        profileRef:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+          description: Opaque, random, stable reference; not derived from any internal id.
+        firstName: { type: string }
+        age: { type: integer, description: Computed from the date of birth, never stored. }
+        city: { type: [string, 'null'] }
+        religion: { type: [string, 'null'] }
+        community: { type: [string, 'null'] }
+        profession: { type: [string, 'null'] }
+        photoRef:
+          type: [string, 'null']
+          description: |
+            Reference to the individual primary approved photo; null when the
+            member has none. Family, group and pre-wedding photos are never
+            referenced.
+        verified: { type: boolean }
+    ProfileDetail:
+      allOf:
+        - $ref: '#/components/schemas/DiscoveryCard'
+        - type: object
+          required: [heightCm, maritalStatus, diet, spokenLanguages, subcommunity, state, country, education, employmentType, familyStatus, aboutMyself, lookingFor]
+          properties:
+            heightCm: { type: [integer, 'null'] }
+            maritalStatus: { type: [string, 'null'] }
+            diet: { type: [string, 'null'] }
+            spokenLanguages:
+              type: array
+              items: { type: string }
+            subcommunity: { type: [string, 'null'] }
+            state: { type: [string, 'null'] }
+            country: { type: [string, 'null'] }
+            education: { type: [string, 'null'] }
+            employmentType: { type: [string, 'null'] }
+            familyStatus: { type: [string, 'null'] }
+            aboutMyself: { type: [string, 'null'] }
+            lookingFor: { type: [string, 'null'] }
     ErrorEnvelope:
       type: object
       required: [code, message, details, requestId]

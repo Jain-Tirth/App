@@ -9,6 +9,7 @@ import { APP_FILTER } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { DiscoveryService } from '../discovery/discovery.service';
 import { ApiExceptionFilter } from '../common/api-exception.filter';
 import { InMemoryProfileSubmissionRepository } from './in-memory-profile-submission.repository';
 import {
@@ -78,7 +79,6 @@ describe('Profile submission and gating (HTTP contract)', () => {
   let now: Date;
   const profilesService = {
     getMyProfile: jest.fn().mockResolvedValue({ profile: null }),
-    getActiveMatches: jest.fn().mockResolvedValue({ total: 0, matches: [] }),
     savePersonalDetails: jest.fn().mockResolvedValue({ saved: true }),
     saveReligiousDetails: jest.fn().mockResolvedValue({ saved: true }),
     saveLocationDetails: jest.fn().mockResolvedValue({ saved: true }),
@@ -98,6 +98,10 @@ describe('Profile submission and gating (HTTP contract)', () => {
         ApprovedProfileGuard,
         EditableProfileGuard,
         { provide: ProfilesService, useValue: profilesService },
+        {
+          provide: DiscoveryService,
+          useValue: { matches: async () => ({ total: 0, matches: [] }) },
+        },
         { provide: APP_FILTER, useClass: ApiExceptionFilter },
         { provide: PROFILE_SUBMISSION_REPOSITORY, useValue: repo },
         { provide: PROFILE_STATUS_READER, useValue: repo },
