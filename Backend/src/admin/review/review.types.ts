@@ -1,4 +1,8 @@
 import type { KycStatus } from '../../kyc/kyc.types';
+import type {
+  ProfileAccountStatus,
+  ProfileReviewStatus,
+} from '../../profiles/profile-status';
 
 export const REVIEW_REASON_CODES = [
   'unreadable-document',
@@ -26,7 +30,7 @@ export type ReviewSection = (typeof REVIEW_SECTIONS)[number];
 
 export const REVIEW_NOTES_MAX = 500;
 
-export type ReviewDecision = 'approve' | 'reject' | 'requestChanges';
+export type ReviewDecision = 'approve' | 'reject' | 'requestChanges' | 'reopen';
 
 export type SlaState = 'ok' | 'atRisk' | 'overdue';
 
@@ -63,7 +67,8 @@ export interface ReviewSubject {
   name: string;
   gender: 'male' | 'female' | null;
   dateOfBirth: string | null;
-  accountStatus: string;
+  accountStatus: ProfileAccountStatus;
+  profileReviewStatus: ProfileReviewStatus;
   kycStatus: string | null;
   documentType: string | null;
   idNumberLast4: string | null;
@@ -92,7 +97,8 @@ export interface DecisionInput {
 /** What a decision does to the member, chosen by the domain under the row lock. */
 export interface ReviewTransition {
   kycStatus: KycStatus;
-  accountStatus: 'active' | 'rejected' | 'pending';
+  accountStatus: ProfileAccountStatus;
+  profileReviewStatus: ProfileReviewStatus;
 }
 
 export type DecisionOutcome =

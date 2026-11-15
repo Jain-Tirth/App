@@ -30,6 +30,7 @@ export type KycEvent =
   | 'documentAttached'
   | 'allDocumentsAttached'
   | 'restart'
+  | 'resubmit'
   | 'approve'
   | 'reject'
   | 'requestChanges';

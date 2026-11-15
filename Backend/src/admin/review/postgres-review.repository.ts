@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 import type {
+  ProfileAccountStatus,
+  ProfileReviewStatus,
+} from '../../profiles/profile-status';
+import type {
   DocumentViewEntry,
   ReviewRepository,
   ReviewState,
@@ -26,7 +30,9 @@ interface SubjectDbRow {
   name: string;
   gender: 'male' | 'female' | null;
   dateOfBirth: string | null;
-  accountStatus: string;
+  accountStatus: ProfileAccountStatus;
+  profileReviewStatus: ProfileReviewStatus;
+  profileSubmittedAt: Date | string | null;
   kycStatus: string | null;
   documentType: string | null;
   idNumberLast4: string | null;
@@ -39,26 +45,27 @@ interface MediaDbRow {
   attachedAt: Date | string;
 }
 
+const PROCEDURE_BY_DECISION = {
+  approve: 'sp_admin_approve_profile',
+  reject: 'sp_admin_reject_profile',
+  reopen: 'sp_admin_reopen_profile',
+} as const;
+
 @Injectable()
 export class PostgresReviewRepository implements ReviewRepository {
   constructor(private readonly db: DatabaseService) {}
 
   async listAwaitingReview(): Promise<QueueRow[]> {
     const result = await this.db.query<QueueDbRow>(
-      `SELECT u."id" AS "userId", p."profileUid", u."name", sub."submittedAt"
-       FROM "KycVerifications" k
-       JOIN "Users" u ON u."id" = k."userId"
+      `SELECT u."id" AS "userId", p."profileUid", u."name",
+              u."profileSubmittedAt" AS "submittedAt"
+       FROM "Users" u
        LEFT JOIN "Profiles" p ON p."userId" = u."id"
-       JOIN LATERAL (
-         SELECT MAX(m."attachedAt") AS "submittedAt",
-                COUNT(DISTINCT m."purpose") AS "purposes"
-         FROM "KycMedia" m
-         WHERE m."verificationId" = k."id" AND m."attachedAt" IS NOT NULL
-       ) sub ON sub."purposes" = 2
-       WHERE k."status" = 'needsReview'
+       WHERE u."profileReviewStatus" = 'submitted'
+         AND u."profileSubmittedAt" IS NOT NULL
          AND u."accountStatus" = 'pending'
          AND u."role" = 'user'
-       ORDER BY sub."submittedAt" ASC, u."id" ASC`,
+       ORDER BY u."profileSubmittedAt" ASC, u."id" ASC`,
     );
 
     return result.rows.map((row) => ({
@@ -71,7 +78,8 @@ export class PostgresReviewRepository implements ReviewRepository {
     const result = await this.db.query<SubjectDbRow>(
       `SELECT u."id" AS "userId", p."profileUid", u."name", u."gender",
               to_char(pp."dateOfBirth", 'YYYY-MM-DD') AS "dateOfBirth",
-              u."accountStatus", k."status" AS "kycStatus",
+              u."accountStatus", u."profileReviewStatus", u."profileSubmittedAt",
+              k."status" AS "kycStatus",
               k."documentType", k."idNumberLast4"
        FROM "Users" u
        LEFT JOIN "Profiles" p ON p."userId" = u."id"
@@ -95,17 +103,17 @@ export class PostgresReviewRepository implements ReviewRepository {
     );
     const photo = media.rows.find((item) => item.purpose === 'kycPhoto');
     const id = media.rows.find((item) => item.purpose === 'kycId');
-    const attached = media.rows.map((item) => new Date(item.attachedAt).getTime());
+    const { profileSubmittedAt, ...fields } = row;
 
     return {
-      ...row,
+      ...fields,
       photo: photo
         ? { storageKey: photo.storageKey, contentType: photo.contentType }
         : null,
       idDocument: id
         ? { storageKey: id.storageKey, contentType: id.contentType }
         : null,
-      submittedAt: photo && id ? new Date(Math.max(...attached)) : null,
+      submittedAt: profileSubmittedAt ? new Date(profileSubmittedAt) : null,
     };
   }
 
@@ -131,7 +139,7 @@ export class PostgresReviewRepository implements ReviewRepository {
   ): Promise<DecisionOutcome> {
     return this.db.transaction(async (client): Promise<DecisionOutcome> => {
       const user = await client.query(
-        `SELECT "accountStatus" FROM "Users"
+        `SELECT "accountStatus", "profileReviewStatus" FROM "Users"
          WHERE "id" = $1 AND "role" = 'user' FOR UPDATE`,
         [input.userId],
       );
@@ -158,11 +166,23 @@ export class PostgresReviewRepository implements ReviewRepository {
       // Throws INVALID_STATUS_TRANSITION; the transaction rolls back untouched.
       const transition = decide({
         accountStatus: user.rows[0].accountStatus,
+        profileReviewStatus: user.rows[0].profileReviewStatus,
         kycStatus,
         hasPhoto: attached.includes('kycPhoto'),
         hasIdDocument: attached.includes('kycId'),
       });
 
+      // The one writer of the status columns, with the values the domain chose.
+      await client.query(
+        'CALL sp_set_profile_review_status($1, $2, $3, $4, $5)',
+        [
+          input.userId,
+          transition.profileReviewStatus,
+          transition.accountStatus,
+          input.now,
+          null,
+        ],
+      );
       await this.callDecisionProcedure(client, input);
 
       return {
@@ -189,13 +209,8 @@ export class PostgresReviewRepository implements ReviewRepository {
       return;
     }
 
-    const procedure =
-      input.decision === 'approve'
-        ? 'sp_admin_approve_profile'
-        : 'sp_admin_reject_profile';
-
     await client.query(
-      `CALL ${procedure}($1, $2, $3, $4, $5, $6, $7)`,
+      `CALL ${PROCEDURE_BY_DECISION[input.decision]}($1, $2, $3, $4, $5, $6, $7)`,
       [...common, ...trail],
     );
   }

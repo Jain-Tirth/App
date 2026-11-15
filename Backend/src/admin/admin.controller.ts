@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -16,6 +17,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { getClientIp, getUserAgent } from '../common/request-context';
 import { AdminJwtAuthGuard } from './admin-jwt-auth.guard';
 import { AdminLoginDto } from './dto/admin-login.dto';
+import { ReopenProfileDto } from './dto/reopen-profile.dto';
 import { ReviewDecisionDto } from './dto/review-decision.dto';
 import { AdminService } from './admin.service';
 import { AdminReviewService } from './review/review.service';
@@ -114,10 +116,23 @@ export class AdminController {
     return this.decide('requestChanges', userId, dto, adminUser, request);
   }
 
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @HttpCode(200)
+  @Post('profiles/:userId/reopen')
+  reopenProfile(
+    @Param('userId', UserIdPipe) userId: string,
+    @Body() dto: ReopenProfileDto,
+    @CurrentUser() adminUser: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.decide('reopen', userId, dto, adminUser, request);
+  }
+
   private decide(
     decision: ReviewDecision,
     userId: string,
-    dto: ReviewDecisionDto,
+    dto: ReviewDecisionDto | ReopenProfileDto,
     adminUser: AuthenticatedUser,
     request: Request,
   ) {

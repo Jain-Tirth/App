@@ -13,6 +13,7 @@ function subject(overrides: Partial<ReviewSubject>): ReviewSubject {
     gender: 'female',
     dateOfBirth: '1998-01-01',
     accountStatus: 'pending',
+    profileReviewStatus: 'submitted',
     kycStatus: 'pending_review',
     documentType: 'aadhaar',
     idNumberLast4: '1234',

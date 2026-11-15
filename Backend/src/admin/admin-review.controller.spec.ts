@@ -40,6 +40,7 @@ function subject(userId: string, overrides: Partial<ReviewSubject> = {}): Review
     gender: 'male',
     dateOfBirth: '1995-05-05',
     accountStatus: 'pending',
+    profileReviewStatus: 'submitted',
     kycStatus: 'needsReview',
     documentType: 'aadhaar',
     idNumberLast4: '9012',
@@ -124,6 +125,111 @@ describe('Admin review (HTTP contract)', () => {
       request(app.getHttpServer()).patch(`/api/v1/admin/profiles${path}`).send(body),
     );
 
+  const post = (path: string, body: object, token: string | null = adminToken) =>
+    as(
+      token,
+      request(app.getHttpServer()).post(`/api/v1/admin/profiles${path}`).send(body),
+    );
+  const rejected = (
+    overrides: Partial<ReviewSubject> = {},
+  ): Partial<ReviewSubject> => ({
+    accountStatus: 'rejected',
+    profileReviewStatus: 'rejected',
+    kycStatus: 'failed',
+    ...overrides,
+  });
+
+  describe('reopen (story 5 AC8)', () => {
+    const body = { reasonCode: 'photo-mismatch', notes: 'Upload a new photo' };
+
+    it('moves a rejected profile to needsChanges and writes one audit row', async () => {
+      repo.addSubject(subject(U1, rejected()));
+
+      const res = await post(`/${U1}/reopen`, body);
+
+      expect(res.status).toBe(200);
+      expect(res.body.statusAfter).toBe('failed');
+      expect(repo.subjects[0]).toMatchObject({
+        accountStatus: 'pending',
+        profileReviewStatus: 'needsChanges',
+      });
+      expect(repo.auditLog).toHaveLength(1);
+      expect(repo.auditLog[0]).toMatchObject({
+        adminId: ADMIN_ID,
+        targetId: U1,
+        action: 'REOPEN_PROFILE',
+        reasonCode: 'photo-mismatch',
+        notes: 'Upload a new photo',
+      });
+    });
+
+    it('needs no uploaded files, since the member may have restarted verification', async () => {
+      repo.addSubject(
+        subject(U1, rejected({ photo: null, idDocument: null, kycStatus: 'consentGiven' })),
+      );
+
+      const res = await post(`/${U1}/reopen`, body);
+
+      expect(res.status).toBe(200);
+      expect(repo.subjects[0].kycStatus).toBe('consentGiven');
+    });
+
+    it.each(['draft', 'submitted', 'approved', 'needsChanges'] as const)(
+      'answers 409 from %s and writes no audit row',
+      async (status) => {
+        repo.addSubject(subject(U1, { profileReviewStatus: status }));
+
+        const res = await post(`/${U1}/reopen`, body);
+
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe('INVALID_STATUS_TRANSITION');
+        expect(repo.auditLog).toHaveLength(0);
+        expect(repo.subjects[0].profileReviewStatus).toBe(status);
+      },
+    );
+
+    it('answers 404 for an unknown member', async () => {
+      expect((await post(`/${UNKNOWN}/reopen`, body)).status).toBe(404);
+    });
+
+    it.each([{}, { notes: 'x' }, { reasonCode: 'because', notes: 'x' }])(
+      'answers 400 for a missing or invalid reason code (%j)',
+      async (payload) => {
+        repo.addSubject(subject(U1, rejected()));
+
+        const res = await post(`/${U1}/reopen`, payload);
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('INVALID_REASON_CODE');
+        expect(repo.auditLog).toHaveLength(0);
+      },
+    );
+
+    it.each(['status', 'accountStatus', 'profileReviewStatus', 'adminId', 'sections'])(
+      'answers 400 when the body carries %s',
+      async (key) => {
+        repo.addSubject(subject(U1, rejected()));
+
+        const res = await post(`/${U1}/reopen`, { ...body, [key]: 'x' });
+
+        expect(res.status).toBe(400);
+        expect(repo.subjects[0].profileReviewStatus).toBe('rejected');
+      },
+    );
+
+    it('answers 401 without a token and 403 for a member token', async () => {
+      repo.addSubject(subject(U1, rejected()));
+      const member = await jwt.signAsync(
+        { sub: U1, email: 'm@example.com', role: 'user' },
+        { secret: MEMBER_SECRET, expiresIn: '1h' },
+      );
+
+      expect((await post(`/${U1}/reopen`, body, null)).status).toBe(401);
+      expect((await post(`/${U1}/reopen`, body, member)).status).toBe(403);
+      expect(repo.auditLog).toHaveLength(0);
+    });
+  });
+
   describe('queue (AC1)', () => {
     it('lists the oldest submission first with an SLA reading', async () => {
       repo.addSubject(
@@ -150,6 +256,17 @@ describe('Admin review (HTTP contract)', () => {
       // Thursday 18:00 to Monday 12:00 is Friday's 9 hours plus Monday's 3.
       expect(res.body.profiles[1].slaState).toBe('ok');
       expect(res.body.profiles[1].slaRemainingHours).toBe(36);
+    });
+  });
+
+  describe('queue after withdraw (story 5 AC3)', () => {
+    it('lists only profiles whose review status is submitted', async () => {
+      repo.addSubject(subject(U1));
+      repo.addSubject(subject(U2, { profileReviewStatus: 'draft', submittedAt: null }));
+
+      const res = await get('/pending');
+
+      expect(res.body.profiles.map((p: { userId: string }) => p.userId)).toEqual([U1]);
     });
   });
 
@@ -239,6 +356,7 @@ describe('Admin review (HTTP contract)', () => {
       });
       expect(repo.subjects[0]).toMatchObject({
         accountStatus: 'active',
+        profileReviewStatus: 'approved',
         kycStatus: 'approved',
       });
     });
@@ -277,6 +395,7 @@ describe('Admin review (HTTP contract)', () => {
       expect(res.status).toBe(200);
       expect(repo.subjects[0]).toMatchObject({
         accountStatus: 'rejected',
+        profileReviewStatus: 'rejected',
         kycStatus: 'failed',
       });
       expect(repo.auditLog[0]).toMatchObject({
@@ -321,6 +440,7 @@ describe('Admin review (HTTP contract)', () => {
       });
       expect(repo.subjects[0]).toMatchObject({
         accountStatus: 'pending',
+        profileReviewStatus: 'needsChanges',
         kycStatus: 'changesNeeded',
       });
       expect(repo.auditLog[0].action).toBe('REQUEST_CHANGES');
@@ -357,10 +477,25 @@ describe('Admin review (HTTP contract)', () => {
     );
 
     it.each([
-      ['already approved', { accountStatus: 'active', kycStatus: 'approved' }],
-      ['already rejected', { accountStatus: 'rejected', kycStatus: 'failed' }],
+      [
+        'already approved',
+        { accountStatus: 'active', profileReviewStatus: 'approved', kycStatus: 'approved' },
+      ],
+      [
+        'already rejected',
+        { accountStatus: 'rejected', profileReviewStatus: 'rejected', kycStatus: 'failed' },
+      ],
       ['blocked', { accountStatus: 'blocked' }],
-      ['never submitted', { kycStatus: null, photo: null, idDocument: null, submittedAt: null }],
+      [
+        'never submitted',
+        {
+          profileReviewStatus: 'draft',
+          kycStatus: null,
+          photo: null,
+          idDocument: null,
+          submittedAt: null,
+        },
+      ],
     ])('answers 409 for a decision on a profile that is %s', async (_label, state) => {
       repo.addSubject(subject(U1, state as Partial<ReviewSubject>));
       const before = JSON.stringify(repo.subjects[0]);

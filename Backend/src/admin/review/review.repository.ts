@@ -1,4 +1,8 @@
 import type {
+  ProfileAccountStatus,
+  ProfileReviewStatus,
+} from '../../profiles/profile-status';
+import type {
   AuditContext,
   DecisionInput,
   DecisionOutcome,
@@ -19,7 +23,8 @@ export interface DocumentViewEntry {
 
 /** The member state a decision is made against, read under the row lock. */
 export interface ReviewState {
-  accountStatus: string;
+  accountStatus: ProfileAccountStatus;
+  profileReviewStatus: ProfileReviewStatus;
   kycStatus: string | null;
   hasPhoto: boolean;
   hasIdDocument: boolean;

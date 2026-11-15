@@ -22,6 +22,8 @@ const TRANSITIONS: Record<KycEvent, Partial<Record<KycStatus, KycStatus>>> = {
     documentUploaded: 'needsReview',
   },
   restart: { failed: 'consentGiven', changesNeeded: 'consentGiven' },
+  // The member resubmits the profile with the files already attached.
+  resubmit: { changesNeeded: 'needsReview' },
   approve: { needsReview: 'approved' },
   reject: { needsReview: 'failed' },
   requestChanges: { needsReview: 'changesNeeded' },

@@ -2,7 +2,8 @@ import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { ApiException } from '../../common/api-error';
 import { evaluateAgeGate, type AgeMinimums } from '../../profiles/age-gate';
 import { transitionKycStatus } from '../../kyc/kyc.domain';
-import { KYC_URL_TTL_SECONDS } from '../../kyc/kyc.types';
+import { KYC_URL_TTL_SECONDS, type KycStatus } from '../../kyc/kyc.types';
+import { transitionProfileStatus } from '../../profiles/profile-status';
 import {
   OBJECT_STORAGE,
   type ObjectStorage,
@@ -35,22 +36,19 @@ export interface DecisionRequest {
   sections?: ReviewSection[];
 }
 
+/** Every decision is a profile event; `reopen` is the only one without a KYC event. */
 const EVENT_BY_DECISION = {
   approve: 'approve',
   reject: 'reject',
   requestChanges: 'requestChanges',
-} as const;
-
-const ACCOUNT_AFTER = {
-  approve: 'active',
-  reject: 'rejected',
-  requestChanges: 'pending',
+  reopen: 'reopen',
 } as const;
 
 const MESSAGE_BY_DECISION = {
   approve: 'Profile approved successfully.',
   reject: 'Profile rejected successfully.',
   requestChanges: 'Changes requested successfully.',
+  reopen: 'Profile reopened for changes.',
 } as const;
 
 @Injectable()
@@ -183,20 +181,35 @@ export class AdminReviewService {
     decision: ReviewDecision,
     state: ReviewState,
   ): ReviewTransition {
-    if (
-      state.accountStatus !== 'pending' ||
-      !state.hasPhoto ||
-      !state.hasIdDocument
-    ) {
+    const next = transitionProfileStatus(
+      state.profileReviewStatus,
+      EVENT_BY_DECISION[decision],
+      state.accountStatus,
+    );
+
+    if (!next.ok || state.accountStatus === 'blocked') {
+      throw this.invalidTransition(state);
+    }
+
+    const kycStatus = (state.kycStatus ?? 'notStarted') as KycStatus;
+
+    if (decision === 'reopen') {
+      // The member may already have restarted verification; the KYC case stays as it is.
+      return {
+        kycStatus,
+        accountStatus: next.accountStatus,
+        profileReviewStatus: next.status,
+      };
+    }
+
+    if (!state.hasPhoto || !state.hasIdDocument) {
       throw this.invalidTransition(state);
     }
 
     return {
-      kycStatus: transitionKycStatus(
-        (state.kycStatus ?? 'notStarted') as Parameters<typeof transitionKycStatus>[0],
-        EVENT_BY_DECISION[decision],
-      ),
-      accountStatus: ACCOUNT_AFTER[decision],
+      kycStatus: transitionKycStatus(kycStatus, decision),
+      accountStatus: next.accountStatus,
+      profileReviewStatus: next.status,
     };
   }
 
@@ -205,7 +218,11 @@ export class AdminReviewService {
       HttpStatus.CONFLICT,
       'INVALID_STATUS_TRANSITION',
       'This profile is not awaiting review.',
-      { accountStatus: state.accountStatus, kycStatus: state.kycStatus },
+      {
+        status: state.profileReviewStatus,
+        accountStatus: state.accountStatus,
+        kycStatus: state.kycStatus,
+      },
     );
   }
 

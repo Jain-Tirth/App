@@ -224,6 +224,106 @@ paths:
                     requestId: 7d0c6c3e-0f0b-4b0e-9f5e-2f1f3f2f1a12
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: '`PROFILE_LOCKED_IN_REVIEW`: the profile is `submitted`; withdraw it before editing (the same applies to `PUT /profiles/step-2` to `step-5`). A body carrying `status`, `accountStatus`, `profileReviewStatus` or `reviewStatus` is 400 `VALIDATION_ERROR`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /profiles/submit:
+    post:
+      tags: [Profiles]
+      summary: Submit the profile for review (or resubmit after requested changes)
+      description: |
+        Moves `draft` or `needsChanges` to `submitted` and starts the review SLA
+        clock (`submittedAt`). Steps 1 to 5, the current required consents, the
+        age gate and the KYC photo and ID must all be in place; otherwise 409
+        `SUBMISSION_INCOMPLETE` with `details.missing` (for example `step-3`,
+        `ageGate`, `consent`, `kycPhoto`, `kycId`) and nothing changes. A repeat
+        call while `submitted` is a no-op that returns the same `submittedAt`.
+        From `approved` or `rejected` the answer is 409
+        `INVALID_STATUS_TRANSITION`. Takes no request body.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The profile is submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileSubmissionResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: '`SUBMISSION_INCOMPLETE` (`details.missing` lists the items) or `INVALID_STATUS_TRANSITION` (`details.status`, `details.event`)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                incomplete:
+                  value:
+                    code: SUBMISSION_INCOMPLETE
+                    message: The profile is missing required items.
+                    details: { missing: [step-3, kycPhoto] }
+                    requestId: 7d0c6c3e-0f0b-4b0e-9f5e-2f1f3f2f1a21
+  /profiles/withdraw:
+    post:
+      tags: [Profiles]
+      summary: Withdraw a submitted profile back to draft
+      description: |
+        Moves `submitted` to `draft`; the profile leaves the admin queue and the
+        SLA clock is cleared (`submittedAt` is null). From any other status the
+        answer is 409 `INVALID_STATUS_TRANSITION`. Takes no request body.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The profile is a draft again
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileSubmissionResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: '`INVALID_STATUS_TRANSITION`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /profiles/matches:
+    get:
+      tags: [Profiles]
+      summary: Active matches (approved members only)
+      description: |
+        Discovery and engagement endpoints are gated on the server. While the
+        member's `profileReviewStatus` is not `approved` the answer is 403
+        `PROFILE_NOT_APPROVED` with `details.status` set to the current status.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The matches
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: '`PROFILE_NOT_APPROVED`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                notApproved:
+                  value:
+                    code: PROFILE_NOT_APPROVED
+                    message: Your profile must be approved before you can use this feature.
+                    details: { status: submitted }
+                    requestId: 7d0c6c3e-0f0b-4b0e-9f5e-2f1f3f2f1a22
   /kyc/verification:
     post:
       tags: [KYC]
@@ -641,6 +741,42 @@ paths:
           $ref: '#/components/responses/AdminNotFound'
         '409':
           $ref: '#/components/responses/AdminInvalidTransition'
+  /admin/profiles/{userId}/reopen:
+    post:
+      tags: [Admin review]
+      summary: Reopen a rejected profile so the member can resubmit
+      description: |
+        Allowed only from `rejected`; moves the profile to `needsChanges` and
+        `accountStatus` to `pending`, so the member can edit and `POST
+        /profiles/submit` again with the earlier data kept. `reasonCode` is
+        required (any of the eleven codes; 400 `INVALID_REASON_CODE` otherwise).
+        `notes` is at most 500 characters. Exactly one audit row is written
+        (action `REOPEN_PROFILE`). From any other status the answer is 409
+        `INVALID_STATUS_TRANSITION` and nothing is written. `status`,
+        `accountStatus`, `profileReviewStatus` and `adminId` in the body are 400.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReopenProfileRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/ReviewDecisionDone'
+        '400':
+          $ref: '#/components/responses/AdminBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          $ref: '#/components/responses/AdminNotFound'
+        '409':
+          $ref: '#/components/responses/AdminInvalidTransition'
 components:
   securitySchemes:
     bearerAuth:
@@ -729,6 +865,36 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
   schemas:
+    ProfileReviewStatus:
+      type: string
+      enum: [draft, submitted, approved, needsChanges, rejected]
+      description: |
+        Review state of a member's profile. Transitions: draft to submitted
+        (submit), submitted to draft (withdraw), submitted to approved,
+        needsChanges or rejected (admin), needsChanges to submitted (resubmit),
+        rejected to needsChanges (admin reopen). Also returned by
+        `GET /profiles/me` as `profile.user.profileReviewStatus`.
+    ProfileSubmissionResult:
+      type: object
+      required: [status, submittedAt]
+      properties:
+        status:
+          $ref: '#/components/schemas/ProfileReviewStatus'
+        submittedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Start of the review SLA clock; null while the profile is a draft
+    ReopenProfileRequest:
+      type: object
+      required: [reasonCode]
+      additionalProperties: false
+      properties:
+        reasonCode:
+          type: string
+        notes:
+          type: string
+          maxLength: 500
     SavePersonalDetailsRequest:
       type: object
       required: [gender, dateOfBirth]

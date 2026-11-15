@@ -36,6 +36,7 @@ const ACTIONS = {
   approve: 'APPROVE_PROFILE',
   reject: 'REJECT_PROFILE',
   requestChanges: 'REQUEST_CHANGES',
+  reopen: 'REOPEN_PROFILE',
 } as const;
 
 /**
@@ -56,7 +57,7 @@ export class InMemoryReviewRepository implements ReviewRepository {
       .filter(
         (item) =>
           item.accountStatus === 'pending' &&
-          item.kycStatus === 'needsReview' &&
+          item.profileReviewStatus === 'submitted' &&
           item.photo &&
           item.idDocument &&
           item.submittedAt,
@@ -104,6 +105,7 @@ export class InMemoryReviewRepository implements ReviewRepository {
 
     const transition = decide({
       accountStatus: subject.accountStatus,
+      profileReviewStatus: subject.profileReviewStatus,
       kycStatus: subject.kycStatus,
       hasPhoto: subject.photo !== null,
       hasIdDocument: subject.idDocument !== null,
@@ -111,6 +113,7 @@ export class InMemoryReviewRepository implements ReviewRepository {
     const statusBefore = subject.kycStatus ?? 'notStarted';
 
     subject.accountStatus = transition.accountStatus;
+    subject.profileReviewStatus = transition.profileReviewStatus;
     subject.kycStatus = transition.kycStatus;
     this.decisions.set(input.userId, {
       decision: input.decision,
