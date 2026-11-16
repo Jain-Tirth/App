@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { LoginPage } from './pages/LoginPage';
 import { Dashboard } from './pages/Dashboard';
 import { ReviewPage } from './pages/ReviewPage';
+import { InterestCooldownPage } from './pages/InterestCooldownPage';
 
 export default function App() {
   const [token, setToken] = useState<string | null>(
@@ -47,6 +48,10 @@ export default function App() {
             <Navigate to="/login" replace />
           )
         }
+      />
+      <Route
+        path="/interest-cooldown"
+        element={token ? <InterestCooldownPage token={token} /> : <Navigate to="/login" replace />}
       />
       <Route
         path="/profiles"

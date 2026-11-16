@@ -30,3 +30,25 @@ export function describeReopenError(error: unknown): string {
   if (!(error instanceof AdminApiError)) return GENERIC_MESSAGE;
   return REOPEN_ERROR_MESSAGES[error.code] ?? GENERIC_MESSAGE;
 }
+
+const CHOOSE_COOLDOWN_REASON =
+  'Choose a reason from the list, check both profile IDs and keep the notes short, then try again.';
+
+/** One entry per code the Clear cooldown call can produce. */
+export const CLEAR_COOLDOWN_ERROR_MESSAGES: Record<string, string> = {
+  COOLDOWN_NOT_FOUND: 'There is no active cooldown for this pair.',
+  INVALID_REASON_CODE: CHOOSE_COOLDOWN_REASON,
+  VALIDATION_ERROR: CHOOSE_COOLDOWN_REASON,
+  UNAUTHORIZED: 'Your session has expired. Please sign in again.',
+  FORBIDDEN: 'You do not have permission to clear cooldowns.',
+  RATE_LIMITED: 'Too many requests. Please wait a moment and try again.',
+  INTERNAL_ERROR: 'Something went wrong on our side. Please try again in a moment.',
+  NETWORK_ERROR: 'We could not reach the server. Please check your connection and try again.',
+  TIMEOUT: 'That is taking too long. Please try again.',
+  NON_JSON_RESPONSE: GENERIC_MESSAGE,
+};
+
+export function describeClearCooldownError(error: unknown): string {
+  if (!(error instanceof AdminApiError)) return GENERIC_MESSAGE;
+  return CLEAR_COOLDOWN_ERROR_MESSAGES[error.code] ?? GENERIC_MESSAGE;
+}

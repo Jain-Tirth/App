@@ -16,6 +16,7 @@ import { PendingPage } from './pages/PendingPage';
 import { WizardPage } from './pages/RegisterPage';
 import { AppPage } from './pages/AppPage';
 import { ProfileDetailPage } from './pages/ProfileDetailPage';
+import { InterestsPage } from './pages/InterestsPage';
 
 const OTP_CONTEXT_KEY = 'user_otp_context';
 
@@ -265,6 +266,20 @@ function AppRouter() {
           accessToken ? (
             reviewStatus === 'approved' ? (
               member(accessToken, <ProfileDetailPage token={accessToken} onLogout={clearSession} />)
+            ) : (
+              <Navigate to={nextStepPath} replace />
+            )
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/interests"
+        element={
+          accessToken ? (
+            reviewStatus === 'approved' ? (
+              member(accessToken, <InterestsPage token={accessToken} onLogout={clearSession} />)
             ) : (
               <Navigate to={nextStepPath} replace />
             )

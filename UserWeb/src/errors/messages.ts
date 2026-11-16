@@ -12,6 +12,7 @@
  * - Unknown codes get GENERIC_MESSAGE and nothing else.
  */
 import { ApiError, isApiError } from '../apiError';
+import { formatRetryDate } from '../lib/interests';
 
 export type ErrorContext =
   | 'register'
@@ -30,6 +31,7 @@ export type ErrorContext =
   | 'discovery'
   | 'submit'
   | 'withdraw'
+  | 'interests'
   | 'generic';
 
 export interface FriendlyError {
@@ -145,6 +147,13 @@ export const CODE_MESSAGES: Record<string, Builder> = {
     'Your search results are out of date. Please start the search again.',
   ),
   PROFILE_NOT_FOUND: constant("This profile isn't available."),
+  CANNOT_INTEREST_SELF: constant('You cannot send an interest to your own profile.'),
+  INTEREST_ALREADY_EXISTS: constant('You have already sent an interest to this member.'),
+  INTEREST_COOLDOWN: (err) => formatRetryDate(readRetryAfter(err.details)),
+  INTEREST_NOT_FOUND: constant(
+    'We could not find that interest. Please refresh your interests and try again.',
+  ),
+  COOLDOWN_NOT_FOUND: constant('There is no active cooldown for this pair.'),
 
   // Status-derived codes. Context-specific wording is applied first.
   BAD_REQUEST: constant('We could not complete that. Please check your details and try again.'),
@@ -225,7 +234,20 @@ export const CONTEXT_CODE_MESSAGES: Record<string, string> = {
     'Your profile needs to be approved before you can browse other profiles. You can follow its progress on your status page.',
   'discovery:VALIDATION_ERROR':
     'That search could not be understood. Please clear the filters and try again.',
+  'interests:INVALID_STATUS_TRANSITION':
+    'This interest has already changed, so that action is no longer available. Please refresh to see its latest status.',
+  'interests:PROFILE_NOT_FOUND': "This member's profile isn't available, so an interest cannot be sent.",
+  'interests:PROFILE_NOT_APPROVED':
+    'Your profile needs to be approved before you can send or answer interests. You can follow its progress on your status page.',
+  'interests:RATE_LIMITED':
+    'You have reached the limit of interests you can send today. Please try again tomorrow.',
 };
+
+function readRetryAfter(details: unknown): unknown {
+  return details && typeof details === 'object' && 'retryAfter' in details
+    ? (details as { retryAfter: unknown }).retryAfter
+    : null;
+}
 
 function readMinimumAge(details: unknown): number | null {
   if (details && typeof details === 'object' && 'minimumAge' in details) {

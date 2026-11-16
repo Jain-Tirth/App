@@ -228,3 +228,26 @@ export interface DiscoverySearchResponse {
   items: DiscoveryCard[];
   nextCursor: string | null;
 }
+
+export type InterestStatus = 'pending' | 'accepted' | 'declined' | 'withdrawn';
+export type InterestTab = 'sent' | 'received';
+export type InterestAction = 'accept' | 'decline' | 'withdraw';
+
+/** Result of send, accept, decline and withdraw. */
+export interface InterestView {
+  id: string;
+  status: InterestStatus;
+  canChat: boolean;
+  createdAt: string;
+  respondedAt: string | null;
+}
+
+/** A list row: the other member as a story 6 card, plus the interest. */
+export interface InterestListItem extends InterestView {
+  member: DiscoveryCard;
+}
+
+export interface InterestListResponse {
+  items: InterestListItem[];
+  nextCursor: string | null;
+}

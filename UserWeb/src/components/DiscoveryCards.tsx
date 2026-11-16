@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { BadgeCheck, Briefcase, MapPin, Sparkles, UserRound } from 'lucide-react';
 import type { DiscoveryCard } from '../types';
 import { displayValue, formatAge } from '../lib/discovery';
+import { SendInterestButton } from './SendInterestButton';
 
 /** Stand-in for a missing photo. Always carries an alt text; never shows another image. */
 export function PhotoPlaceholder({ firstName, hasPhoto }: { firstName: string; hasPhoto: boolean }) {
@@ -33,17 +34,20 @@ interface ProfileCardProps {
   card: DiscoveryCard;
   /** Query string of the search that produced the card, so "Back to results" restores it. */
   backSearch: string;
+  /** With a token the card carries the Send interest button (kept outside the link). */
+  token?: string;
+  onLogout?: () => void;
 }
 
 /** Shows only the story 6 card fields. Links use profileRef and nothing else. */
-export function ProfileCard({ card, backSearch }: ProfileCardProps) {
+export function ProfileCard({ card, backSearch, token, onLogout }: ProfileCardProps) {
   const age = formatAge(card.age);
   return (
-    <li className="min-w-0 list-none" data-testid="profile-card">
+    <li className="flex min-w-0 list-none flex-col gap-3" data-testid="profile-card">
       <Link
         to={`/profile/${encodeURIComponent(card.profileRef)}`}
         state={{ backSearch }}
-        className="block h-full overflow-hidden rounded-2xl border border-brand-border bg-white transition-all hover:-translate-y-1 hover:shadow-glow focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+        className="block flex-1 overflow-hidden rounded-2xl border border-brand-border bg-white transition-all hover:-translate-y-1 hover:shadow-glow focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
       >
         <div className="flex items-center gap-3 border-b border-brand-border/60 bg-gradient-to-r from-brand-primary-soft to-brand-gold-light/60 p-5">
           <PhotoPlaceholder firstName={card.firstName} hasPhoto={card.photoRef !== null} />
@@ -72,6 +76,13 @@ export function ProfileCard({ card, backSearch }: ProfileCardProps) {
           </div>
         </div>
       </Link>
+      {token && onLogout ? (
+        <SendInterestButton
+          token={token}
+          receiverProfileRef={card.profileRef}
+          onLogout={onLogout}
+        />
+      ) : null}
     </li>
   );
 }

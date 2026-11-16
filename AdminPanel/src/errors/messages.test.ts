@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { AdminApiError } from './adminApiError';
-import { GENERIC_MESSAGE, REOPEN_ERROR_MESSAGES, describeReopenError } from './messages';
+import {
+  CLEAR_COOLDOWN_ERROR_MESSAGES,
+  GENERIC_MESSAGE,
+  REOPEN_ERROR_MESSAGES,
+  describeClearCooldownError,
+  describeReopenError,
+} from './messages';
 
 const FORBIDDEN_PATTERNS: Array<[string, RegExp]> = [
   ['curly brace', /[{}]/],
@@ -58,5 +64,45 @@ describe('reopen error messages', () => {
     expect(describeReopenError(new AdminApiError({ code: 'WEIRD_CODE', status: 418 }))).toBe(GENERIC_MESSAGE);
     expect(describeReopenError(new Error('boom {"x":1}'))).toBe(GENERIC_MESSAGE);
     expect(describeReopenError('text')).toBe(GENERIC_MESSAGE);
+  });
+});
+
+const COOLDOWN_CODES = [
+  'COOLDOWN_NOT_FOUND',
+  'INVALID_REASON_CODE',
+  'UNAUTHORIZED',
+  'FORBIDDEN',
+  'NETWORK_ERROR',
+  'TIMEOUT',
+  'NON_JSON_RESPONSE',
+];
+
+describe('clear cooldown error messages', () => {
+  it('has an entry for every code of the call', () => {
+    for (const code of COOLDOWN_CODES) {
+      expect(CLEAR_COOLDOWN_ERROR_MESSAGES[code], code).toBeTypeOf('string');
+    }
+  });
+
+  it('fixes the wording of a missing cooldown', () => {
+    expect(describeClearCooldownError(new AdminApiError({ code: 'COOLDOWN_NOT_FOUND', status: 404 }))).toBe(
+      'There is no active cooldown for this pair.',
+    );
+  });
+
+  it('keeps every message free of braces, codes, status numbers and raw text', () => {
+    for (const text of Object.values(CLEAR_COOLDOWN_ERROR_MESSAGES)) expectClean(text);
+    for (const status of [0, 400, 401, 403, 404, 429, 500]) {
+      for (const code of [...COOLDOWN_CODES, 'SOMETHING_NEW']) {
+        expectClean(describeClearCooldownError(new AdminApiError({ code, status })));
+      }
+    }
+  });
+
+  it('answers an unknown code or a foreign error with the generic message only', () => {
+    expect(describeClearCooldownError(new AdminApiError({ code: 'WEIRD_CODE', status: 418 }))).toBe(
+      GENERIC_MESSAGE,
+    );
+    expect(describeClearCooldownError(new Error('boom {"x":1}'))).toBe(GENERIC_MESSAGE);
   });
 });

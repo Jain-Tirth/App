@@ -77,6 +77,17 @@ export interface ReopenBody {
   notes?: string;
 }
 
+/** Reason codes the interests cooldown endpoint accepts (not the KYC REASON_CODES). */
+export const COOLDOWN_REASON_CODES = ['member-appeal', 'admin-error', 'goodwill', 'other'] as const;
+export type CooldownReasonCode = (typeof COOLDOWN_REASON_CODES)[number];
+
+export interface ClearCooldownBody {
+  senderProfileUid: string;
+  receiverProfileRef: string;
+  reasonCode: CooldownReasonCode;
+  notes?: string;
+}
+
 export interface ReopenResult {
   message: string;
   userId: string;

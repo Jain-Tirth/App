@@ -1,5 +1,6 @@
 import type {
   AdminLoginResponse,
+  ClearCooldownBody,
   DashboardStats,
   DecisionBody,
   PendingProfile,
@@ -133,6 +134,13 @@ export const api = {
   },
   requestChanges(token: string, userId: string, body: DecisionBody) {
     return decide(token, userId, 'request-changes', body);
+  },
+  clearInterestCooldown(token: string, body: ClearCooldownBody) {
+    return requestTyped<{ cleared: true }>(
+      '/admin/interests/cooldown/clear',
+      { method: 'POST', body: JSON.stringify(body) },
+      token,
+    );
   },
   reopenProfile(token: string, userId: string, body: ReopenBody) {
     return requestTyped<ReopenResult>(

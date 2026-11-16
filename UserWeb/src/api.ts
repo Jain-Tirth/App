@@ -10,6 +10,9 @@ import type {
   LoginResponse,
   DiscoveryCard,
   DiscoverySearchResponse,
+  InterestListResponse,
+  InterestStatus,
+  InterestView,
   ProfileDetail,
   ProfileResponse,
   RecordedConsent,
@@ -164,6 +167,21 @@ function json(body: unknown): { body: string } {
   return { body: JSON.stringify(body) };
 }
 
+export interface InterestListQuery {
+  status?: InterestStatus | '';
+  limit?: number;
+  cursor?: string | null;
+}
+
+function interestQuery(query: InterestListQuery): string {
+  const params = new URLSearchParams();
+  if (query.status) params.set('status', query.status);
+  if (typeof query.limit === 'number') params.set('limit', String(query.limit));
+  if (query.cursor) params.set('cursor', query.cursor);
+  const text = params.toString();
+  return text ? `?${text}` : '';
+}
+
 export const api = {
   register(payload: RegisterPayload) {
     return request<RegisterResponse>('/auth/register', { method: 'POST', ...json(payload) });
@@ -198,6 +216,40 @@ export const api = {
   },
   getProfileDetail(token: string, profileRef: string) {
     return request<ProfileDetail>(`/profiles/${encodeURIComponent(profileRef)}`, {}, token);
+  },
+  sendInterest(token: string, receiverProfileRef: string) {
+    return request<InterestView>(
+      '/interests',
+      { method: 'POST', ...json({ receiverProfileRef }) },
+      token,
+    );
+  },
+  acceptInterest(token: string, id: string) {
+    return request<InterestView>(
+      `/interests/${encodeURIComponent(id)}/accept`,
+      { method: 'POST' },
+      token,
+    );
+  },
+  declineInterest(token: string, id: string) {
+    return request<InterestView>(
+      `/interests/${encodeURIComponent(id)}/decline`,
+      { method: 'POST' },
+      token,
+    );
+  },
+  withdrawInterest(token: string, id: string) {
+    return request<InterestView>(
+      `/interests/${encodeURIComponent(id)}/withdraw`,
+      { method: 'POST' },
+      token,
+    );
+  },
+  listSentInterests(token: string, query: InterestListQuery = {}) {
+    return request<InterestListResponse>(`/interests/sent${interestQuery(query)}`, {}, token);
+  },
+  listReceivedInterests(token: string, query: InterestListQuery = {}) {
+    return request<InterestListResponse>(`/interests/received${interestQuery(query)}`, {}, token);
   },
   submitProfile(token: string) {
     return request<{ status: string }>('/profiles/submit', { method: 'POST' }, token);

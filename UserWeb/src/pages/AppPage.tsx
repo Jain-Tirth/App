@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { ProfileResponse } from '../types';
 import { ConsentHistory } from '../components/ConsentPanels';
 import { DiscoverySection } from '../components/DiscoverySection';
@@ -97,6 +97,15 @@ export function AppPage({ token, profile, onLogout }: AppPageProps) {
                 <ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" />
               </div>
             </div>
+
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs border-brand-border hover:bg-brand-primary-soft hover:text-brand-primary"
+            >
+              <Link to="/interests">Interests</Link>
+            </Button>
 
             <Button
               variant="outline"

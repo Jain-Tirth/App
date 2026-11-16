@@ -196,7 +196,13 @@ export function DiscoverySection({ token, onLogout }: DiscoverySectionProps) {
         ) : (
           <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3" data-testid="recommendations-list">
             {recs.map((card) => (
-              <ProfileCard key={card.profileRef} card={card} backSearch={activeQuery} />
+              <ProfileCard
+                key={card.profileRef}
+                card={card}
+                backSearch={activeQuery}
+                token={token}
+                onLogout={onLogout}
+              />
             ))}
           </ul>
         )}
@@ -279,7 +285,13 @@ export function DiscoverySection({ token, onLogout }: DiscoverySectionProps) {
           <>
             <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3" data-testid="results-list">
               {results.map((card) => (
-                <ProfileCard key={card.profileRef} card={card} backSearch={activeQuery} />
+                <ProfileCard
+                  key={card.profileRef}
+                  card={card}
+                  backSearch={activeQuery}
+                  token={token}
+                  onLogout={onLogout}
+                />
               ))}
             </ul>
             {nextCursor ? (

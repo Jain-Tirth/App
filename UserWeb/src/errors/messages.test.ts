@@ -331,3 +331,67 @@ describe('specific codes', () => {
     );
   });
 });
+
+describe('interest codes', () => {
+  const cooldown = (details: unknown) =>
+    describeError(new ApiError({ code: 'INTEREST_COOLDOWN', status: 409, details }), 'interests')
+      .message;
+
+  it('has an entry for every code of the interests story', () => {
+    for (const code of [
+      'CANNOT_INTEREST_SELF',
+      'INTEREST_ALREADY_EXISTS',
+      'INTEREST_COOLDOWN',
+      'INTEREST_NOT_FOUND',
+      'COOLDOWN_NOT_FOUND',
+    ]) {
+      expect(CODE_MESSAGES[code], code).toBeTypeOf('function');
+    }
+  });
+
+  it('fixes the sentences', () => {
+    const say = (code: string, status: number) =>
+      describeError(sample(code, status), 'interests').message;
+    expect(say('CANNOT_INTEREST_SELF', 400)).toBe('You cannot send an interest to your own profile.');
+    expect(say('INTEREST_ALREADY_EXISTS', 409)).toBe(
+      'You have already sent an interest to this member.',
+    );
+    expect(say('INTEREST_NOT_FOUND', 404)).toBe(
+      'We could not find that interest. Please refresh your interests and try again.',
+    );
+    expect(say('COOLDOWN_NOT_FOUND', 404)).toBe('There is no active cooldown for this pair.');
+    expect(say('INVALID_STATUS_TRANSITION', 409)).toBe(
+      'This interest has already changed, so that action is no longer available. Please refresh to see its latest status.',
+    );
+    expect(say('PROFILE_NOT_FOUND', 404)).toBe(
+      "This member's profile isn't available, so an interest cannot be sent.",
+    );
+    expect(say('PROFILE_NOT_APPROVED', 403)).toBe(
+      'Your profile needs to be approved before you can send or answer interests. You can follow its progress on your status page.',
+    );
+    expect(say('RATE_LIMITED', 429)).toBe(
+      'You have reached the limit of interests you can send today. Please try again tomorrow.',
+    );
+  });
+
+  it('states the retry date for a cooldown, or falls back', () => {
+    expect(cooldown({ retryAfter: '2026-12-14T08:00:00.000Z' })).toBe(
+      'You can send another interest to this member on 14 December 2026.',
+    );
+    expect(cooldown({ retryAfter: 'garbage' })).toBe(
+      'You can send another interest to this member later.',
+    );
+    expect(cooldown(null)).toBe('You can send another interest to this member later.');
+  });
+
+  it('keeps the interest wording clean', () => {
+    for (const text of [
+      cooldown({ retryAfter: '2026-12-14T08:00:00.000Z' }),
+      ...Object.entries(CONTEXT_CODE_MESSAGES)
+        .filter(([key]) => key.startsWith('interests:'))
+        .map(([, text]) => text),
+    ]) {
+      expectClean(text);
+    }
+  });
+});

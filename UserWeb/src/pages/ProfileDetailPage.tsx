@@ -5,6 +5,7 @@ import { api } from '../api';
 import { hasErrorCode } from '../apiError';
 import { ErrorNotice } from '../components/ErrorNotice';
 import { PhotoPlaceholder, VerifiedBadge } from '../components/DiscoveryCards';
+import { SendInterestButton } from '../components/SendInterestButton';
 import { Button } from '../components/ui/button';
 import { describeCode, describeError, type FriendlyError } from '../errors/messages';
 import {
@@ -149,12 +150,20 @@ export function ProfileDetailPage({ token, onLogout }: ProfileDetailPageProps) {
 
         {!loading && detail ? (
           <article className="space-y-6" data-testid="profile-detail">
-            <header className="flex items-center gap-4 rounded-2xl border border-brand-border bg-white p-6">
+            <header className="flex flex-wrap items-center gap-4 rounded-2xl border border-brand-border bg-white p-6">
               <PhotoPlaceholder firstName={detail.firstName} hasPhoto={detail.photoRef !== null} />
-              <div className="min-w-0 space-y-1">
+              <div className="min-w-0 flex-1 space-y-1">
                 <h1 className="truncate font-serif text-2xl font-bold">{detail.firstName}</h1>
                 <p className="text-sm text-brand-muted">{formatAge(detail.age)}</p>
                 {detail.verified ? <VerifiedBadge /> : null}
+              </div>
+              <div className="max-w-full">
+                <SendInterestButton
+                  token={token}
+                  receiverProfileRef={detail.profileRef}
+                  onLogout={onLogout}
+                  size="default"
+                />
               </div>
             </header>
 
