@@ -36,6 +36,8 @@ import { ProfilesService } from './profiles.service';
   // ProfileDetailController owns `/profiles/:profileRef`, so it must come after
   // ProfilesController, whose literal routes (`me`, `matches`) match first.
   controllers: [ProfilesController, DiscoveryController, ProfileDetailController],
+  // Read-only ports other modules (interests) build on.
+  exports: [PROFILE_STATUS_READER, DISCOVERY_REPOSITORY],
   providers: [
     DiscoveryService,
     PostgresDiscoveryRepository,

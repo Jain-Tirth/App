@@ -940,6 +940,228 @@ paths:
           $ref: '#/components/responses/AdminNotFound'
         '409':
           $ref: '#/components/responses/AdminInvalidTransition'
+  /interests:
+    post:
+      tags: [Interests]
+      summary: Send an interest (approved members only)
+      description: |
+        Sending is free. The receiver must be an approved, visible member
+        other than the caller. Self is 400 `CANNOT_INTEREST_SELF`; an unknown,
+        malformed, hidden or non-approved receiver answers the same 404
+        `PROFILE_NOT_FOUND`. A second active (`pending` or `accepted`)
+        interest to the same receiver is 409 `INTEREST_ALREADY_EXISTS`,
+        guaranteed by a partial unique index. After a decline the sender is
+        blocked for `INTEREST_RESEND_COOLDOWN_DAYS` (default 30): 409
+        `INTEREST_COOLDOWN` with `details.retryAfter`. When
+        `INTEREST_DAILY_SEND_LIMIT` is set, send N+1 in a UTC day is 429
+        `RATE_LIMITED`; unset means unlimited. `status`, `senderId`,
+        `respondedAt` and `canChat` in the body are 400.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendInterestRequest'
+      responses:
+        '201':
+          description: Interest sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Interest'
+        '400':
+          description: '`CANNOT_INTEREST_SELF` or `VALIDATION_ERROR`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ProfileNotApproved'
+        '404':
+          description: '`PROFILE_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: '`INTEREST_ALREADY_EXISTS` or `INTEREST_COOLDOWN` (`details.retryAfter`, ISO date)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          description: '`RATE_LIMITED`: the configured daily send limit was reached'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /interests/sent:
+    get:
+      tags: [Interests]
+      summary: Interests the caller sent (newest first, cursor pagination)
+      description: |
+        Only the caller's own rows. A declined interest shows the neutral
+        `statusLabel` "Not accepted" and never a reason. `canChat` is true only
+        when the status is `accepted`. Each item carries the other member as a
+        story 6 card (no contact fields). There is no `mutual` field.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InterestStatusFilter'
+        - $ref: '#/components/parameters/InterestLimit'
+        - $ref: '#/components/parameters/InterestCursor'
+      responses:
+        '200':
+          $ref: '#/components/responses/InterestPage'
+        '400':
+          $ref: '#/components/responses/InterestBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ProfileNotApproved'
+  /interests/received:
+    get:
+      tags: [Interests]
+      summary: Interests the caller received (newest first, cursor pagination)
+      description: Same shape and rules as `GET /interests/sent`, for the receiver.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InterestStatusFilter'
+        - $ref: '#/components/parameters/InterestLimit'
+        - $ref: '#/components/parameters/InterestCursor'
+      responses:
+        '200':
+          $ref: '#/components/responses/InterestPage'
+        '400':
+          $ref: '#/components/responses/InterestBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ProfileNotApproved'
+  /interests/{id}/accept:
+    post:
+      tags: [Interests]
+      summary: Accept a received interest
+      description: |
+        Receiver only; the sender or a third member gets 404
+        `INTEREST_NOT_FOUND`. Idempotent: repeating returns 200 with the same
+        body and writes no second event. From `declined` or `withdrawn` it is
+        409 `INVALID_STATUS_TRANSITION`. The body must be empty.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InterestId'
+      responses:
+        '200':
+          $ref: '#/components/responses/InterestDone'
+        '400':
+          $ref: '#/components/responses/InterestBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ProfileNotApproved'
+        '404':
+          $ref: '#/components/responses/InterestNotFound'
+        '409':
+          $ref: '#/components/responses/InterestInvalidTransition'
+  /interests/{id}/decline:
+    post:
+      tags: [Interests]
+      summary: Decline a received interest
+      description: |
+        Receiver only (404 `INTEREST_NOT_FOUND` otherwise). Idempotent. From
+        `accepted` or `withdrawn` it is 409 `INVALID_STATUS_TRANSITION`. The
+        sender is shown the neutral status "Not accepted", never a reason, and
+        cannot resend for the cooldown period.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InterestId'
+      responses:
+        '200':
+          $ref: '#/components/responses/InterestDone'
+        '400':
+          $ref: '#/components/responses/InterestBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ProfileNotApproved'
+        '404':
+          $ref: '#/components/responses/InterestNotFound'
+        '409':
+          $ref: '#/components/responses/InterestInvalidTransition'
+  /interests/{id}/withdraw:
+    post:
+      tags: [Interests]
+      summary: Withdraw a pending interest
+      description: |
+        Sender only (404 `INTEREST_NOT_FOUND` for the receiver), and only from
+        `pending`; any other status is 409 `INVALID_STATUS_TRANSITION`. A
+        withdrawn interest is no longer active, so the sender may send again.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InterestId'
+      responses:
+        '200':
+          $ref: '#/components/responses/InterestDone'
+        '400':
+          $ref: '#/components/responses/InterestBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ProfileNotApproved'
+        '404':
+          $ref: '#/components/responses/InterestNotFound'
+        '409':
+          $ref: '#/components/responses/InterestInvalidTransition'
+  /admin/interests/cooldown/clear:
+    post:
+      tags: [Admin review]
+      summary: Lift the resend cooldown after an interest decline
+      description: |
+        Admin only (401 without a token, 403 for a member token). While a
+        cooldown is active it is cleared, exactly one audit row is written
+        (action `interestCooldownClear`, admin, sender, receiver, reasonCode,
+        notes) and the sender can send again at once. With no active cooldown
+        (never declined, expired or already cleared) the answer is 404
+        `COOLDOWN_NOT_FOUND` and nothing is written. A missing or unknown
+        `reasonCode` is 400 `INVALID_REASON_CODE`; unknown body fields are 400.
+      security:
+        - adminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClearCooldownRequest'
+      responses:
+        '200':
+          description: Cooldown cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cleared]
+                properties:
+                  cleared: { type: boolean, enum: [true] }
+        '400':
+          $ref: '#/components/responses/AdminBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AdminForbidden'
+        '404':
+          description: '`COOLDOWN_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
 components:
   securitySchemes:
     bearerAuth:
@@ -952,6 +1174,29 @@ components:
       bearerFormat: JWT
       description: Token from POST /admin/login (admin secret)
   parameters:
+    InterestId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    InterestStatusFilter:
+      name: status
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/InterestStatus'
+    InterestLimit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+    InterestCursor:
+      name: cursor
+      in: query
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 512 }
     UserId:
       name: userId
       in: path
@@ -967,6 +1212,45 @@ components:
         type: string
         format: uuid
   responses:
+    InterestPage:
+      description: One page of interests
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items, nextCursor]
+            properties:
+              items:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InterestListItem'
+              nextCursor:
+                type: [string, 'null']
+                description: Null on the last page.
+    InterestDone:
+      description: The interest after the action
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Interest'
+    InterestBadRequest:
+      description: '`VALIDATION_ERROR` (unknown field or a `status` outside the enum, `limit` out of 1..50) or `INVALID_CURSOR`'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    InterestNotFound:
+      description: '`INTEREST_NOT_FOUND` (also for another member''s interest)'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    InterestInvalidTransition:
+      description: '`INVALID_STATUS_TRANSITION`: the status does not allow this action'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     AdminBadRequest:
       description: '`VALIDATION_ERROR` (malformed `userId`, unknown or forbidden body field, notes over 500 characters, empty notes or sections) or `INVALID_REASON_CODE` (allowed values in `details.allowed`)'
       content:
@@ -1441,6 +1725,57 @@ components:
             familyStatus: { type: [string, 'null'] }
             aboutMyself: { type: [string, 'null'] }
             lookingFor: { type: [string, 'null'] }
+    InterestStatus:
+      type: string
+      enum: [pending, accepted, declined, withdrawn]
+      description: '`expired` is reserved in the database and never returned in Phase 1.'
+    SendInterestRequest:
+      type: object
+      additionalProperties: false
+      required: [receiverProfileRef]
+      properties:
+        receiverProfileRef:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+    Interest:
+      type: object
+      required: [id, status, statusLabel, canChat, createdAt, respondedAt]
+      properties:
+        id: { type: string, format: uuid }
+        status:
+          $ref: '#/components/schemas/InterestStatus'
+        statusLabel:
+          type: [string, 'null']
+          description: '"Not accepted" for the sender''s view of a declined interest; otherwise null. Never a reason.'
+        canChat:
+          type: boolean
+          description: Derived, never stored. True only when `status` is `accepted`, in either direction.
+        createdAt: { type: string, format: date-time }
+        respondedAt:
+          type: [string, 'null']
+          format: date-time
+          description: Set on accept and decline.
+    InterestListItem:
+      allOf:
+        - $ref: '#/components/schemas/Interest'
+        - type: object
+          required: [member]
+          properties:
+            member:
+              $ref: '#/components/schemas/DiscoveryCard'
+    ClearCooldownRequest:
+      type: object
+      additionalProperties: false
+      required: [senderProfileUid, receiverProfileRef, reasonCode]
+      properties:
+        senderProfileUid: { type: string }
+        receiverProfileRef:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+        reasonCode:
+          type: string
+          enum: [member-appeal, admin-error, goodwill, other]
+        notes: { type: string, maxLength: 500 }
     ErrorEnvelope:
       type: object
       required: [code, message, details, requestId]

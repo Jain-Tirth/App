@@ -48,7 +48,7 @@ const VISIBLE_WHERE = `u."role" = 'user'
     CASE u."gender" WHEN 'male' THEN $2::int ELSE $3::int END
   ) * INTERVAL '1 year')`;
 
-const CARD_JOINS = `LEFT JOIN "ProfileReligious" pr ON pr."profileId" = p."id"
+export const CARD_JOINS = `LEFT JOIN "ProfileReligious" pr ON pr."profileId" = p."id"
   LEFT JOIN "ProfileLocations" pl ON pl."profileId" = p."id"
   LEFT JOIN "ProfileProfessional" pw ON pw."profileId" = p."id"
   LEFT JOIN LATERAL (
@@ -62,7 +62,7 @@ const CARD_JOINS = `LEFT JOIN "ProfileReligious" pr ON pr."profileId" = p."id"
   ) photo ON true`;
 
 /** Only these columns ever leave the database for a result card. */
-const CARD_COLUMNS = `p."profileRef" AS "profileRef",
+export const CARD_COLUMNS = `p."profileRef" AS "profileRef",
   split_part(btrim(u."name"), ' ', 1) AS "firstName",
   date_part('year', age(${TODAY_UTC}, pp."dateOfBirth"))::int AS "age",
   pl."city" AS "city",

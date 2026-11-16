@@ -100,6 +100,15 @@ const optionalPositiveInt = (fallback: number) =>
     z.coerce.number().int().positive(),
   );
 
+/** A positive integer, or `null` when unset or empty (meaning "no limit"). */
+const optionalLimit = z.preprocess(
+  (value) =>
+    value === undefined || (typeof value === 'string' && value.trim() === '')
+      ? null
+      : value,
+  z.union([z.null(), z.coerce.number().int().positive()]),
+);
+
 /** `HH:MM` on a 24-hour clock, converted to minutes after midnight. */
 const clockMinutes = (fallback: string) =>
   optionalString(fallback)
@@ -162,6 +171,8 @@ const envSchema = z
   STORAGE_PROVIDER: z.enum(['s3', 'fake']),
   KYC_ENCRYPTION_KEY: kycEncryptionKey,
   DAILY_RECOMMENDATIONS: optionalPositiveInt(9),
+  INTEREST_RESEND_COOLDOWN_DAYS: optionalPositiveInt(30),
+  INTEREST_DAILY_SEND_LIMIT: optionalLimit,
   REVIEW_SLA_HOURS: optionalPositiveInt(48),
   REVIEW_BUSINESS_DAYS: isoWeekdays('1,2,3,4,5'),
   REVIEW_BUSINESS_START: clockMinutes('09:00'),
@@ -325,6 +336,14 @@ export const env = {
   },
   get dailyRecommendations(): number {
     return loadEnv().DAILY_RECOMMENDATIONS;
+  },
+  get interests() {
+    const parsed = loadEnv();
+
+    return {
+      resendCooldownDays: parsed.INTEREST_RESEND_COOLDOWN_DAYS,
+      dailySendLimit: parsed.INTEREST_DAILY_SEND_LIMIT,
+    };
   },
   get review() {
     const parsed = loadEnv();
