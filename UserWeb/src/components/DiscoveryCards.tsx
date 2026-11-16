@@ -39,11 +39,10 @@ interface ProfileCardProps {
 export function ProfileCard({ card, backSearch }: ProfileCardProps) {
   const age = formatAge(card.age);
   return (
-    <li className="list-none" data-testid="profile-card">
+    <li className="min-w-0 list-none" data-testid="profile-card">
       <Link
         to={`/profile/${encodeURIComponent(card.profileRef)}`}
         state={{ backSearch }}
-        aria-label={`View profile of ${card.firstName}`}
         className="block h-full overflow-hidden rounded-2xl border border-brand-border bg-white transition-all hover:-translate-y-1 hover:shadow-glow focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
       >
         <div className="flex items-center gap-3 border-b border-brand-border/60 bg-gradient-to-r from-brand-primary-soft to-brand-gold-light/60 p-5">
@@ -84,7 +83,7 @@ export function CardSkeletons({ count, testId }: { count: number; testId: string
       <span role="status" className="sr-only">
         Loading profiles
       </span>
-      <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+      <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
         {Array.from({ length: count }, (_, index) => (
           <li
             key={index}

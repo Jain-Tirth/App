@@ -5,6 +5,7 @@ import { hasErrorCode } from '../apiError';
 import { ErrorNotice, FieldError } from '../components/ErrorNotice';
 import { describeError, type FriendlyError } from '../errors/messages';
 import { ageInYearsUtc, dateOfBirthHint, todayUtc } from '../lib/age';
+import { EMPLOYMENT_TYPE_OPTIONS } from '../lib/discovery';
 import type { ProfileResponse } from '../types';
 import { Logo } from '../components/Logo';
 import { Button } from '../components/ui/button';
@@ -593,12 +594,11 @@ export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps)
                       value={step4.employmentType}
                       onChange={(e) => setStep4({ ...step4, employmentType: e.target.value })}
                     >
-                      <option value="private">Private Sector (Corporate / MNC)</option>
-                      <option value="governmentPsu">Government / PSU Sector</option>
-                      <option value="business">Business / Entrepreneurship</option>
-                      <option value="defence">Defence & Armed Forces</option>
-                      <option value="selfEmployed">Self Employed / Professional</option>
-                      <option value="notWorking">Not Currently Working</option>
+                      {EMPLOYMENT_TYPE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
 

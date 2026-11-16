@@ -1,5 +1,3 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -7,7 +5,17 @@ import { describe, expect, it } from 'vitest';
  * member sees must come from errors/messages.ts. This scans the source text.
  */
 
-const SRC = join(__dirname, '..');
+/** Raw text of every non-test source file under src, keyed by its path relative to this folder. */
+const SOURCES = import.meta.glob<string>(['../**/*.{ts,tsx}', '!../**/*.test.{ts,tsx}'], {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+});
+
+/** Turns a glob key ("../pages/X.tsx" or "./messages.ts") into a path relative to src. */
+function srcPath(key: string): string {
+  return key.startsWith('../') ? key.slice(3) : `errors/${key.slice(2)}`;
+}
 
 /** Files allowed to touch raw error internals. */
 const EXEMPT = new Set(['errors/messages.ts', 'api.ts', 'apiError.ts']);
@@ -51,18 +59,6 @@ export function findUnmappedCatchBlocks(source: string): number {
   return count;
 }
 
-function collect(dir: string, files: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      collect(full, files);
-    } else if (/\.(ts|tsx)$/.test(entry) && !/\.test\.(ts|tsx)$/.test(entry)) {
-      files.push(full);
-    }
-  }
-  return files;
-}
-
 describe('matcher self-check', () => {
   it.each([
     ['err.message', 'setError(err.message)'],
@@ -96,20 +92,27 @@ describe('matcher self-check', () => {
 });
 
 describe('UserWeb sources render no raw errors', () => {
-  const files = collect(SRC).filter(
-    (file) => !EXEMPT.has(relative(SRC, file).split(sep).join('/')),
-  );
+  const files = Object.entries(SOURCES)
+    .map(([key, source]): [string, string] => [srcPath(key), source])
+    .filter(([name]) => !EXEMPT.has(name));
 
   it('scans a meaningful set of files', () => {
     expect(files.length).toBeGreaterThan(10);
   });
 
-  it.each(files.map((file) => [relative(SRC, file).split(sep).join('/'), file]))(
-    '%s',
-    (_name, file) => {
-      const source = readFileSync(file, 'utf8');
-      expect(findViolations(source)).toEqual([]);
-      expect(findUnmappedCatchBlocks(source)).toBe(0);
-    },
-  );
+  it('covers pages, components and lib, and leaves out the exempt files and tests', () => {
+    const names = files.map(([name]) => name);
+    expect(names).toContain('pages/ProfileDetailPage.tsx');
+    expect(names).toContain('components/DiscoverySection.tsx');
+    expect(names).toContain('lib/discovery.ts');
+    expect(Object.keys(SOURCES).map(srcPath)).toContain('errors/messages.ts');
+    expect(names).not.toContain('errors/messages.ts');
+    expect(names).not.toContain('lib/discovery.test.ts');
+    expect(names).not.toContain('api.ts');
+  });
+
+  it.each(files)('%s', (_name, source) => {
+    expect(findViolations(source)).toEqual([]);
+    expect(findUnmappedCatchBlocks(source)).toBe(0);
+  });
 });

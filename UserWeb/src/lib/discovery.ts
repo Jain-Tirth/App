@@ -26,6 +26,16 @@ export const DIET_OPTIONS = [
   { value: 'eggetarian', label: 'Eggetarian' },
 ] as const;
 
+/** Same values and labels as the wizard's step 4 "Employment Sector" select, which renders this list. */
+export const EMPLOYMENT_TYPE_OPTIONS = [
+  { value: 'private', label: 'Private Sector (Corporate / MNC)' },
+  { value: 'governmentPsu', label: 'Government / PSU Sector' },
+  { value: 'business', label: 'Business / Entrepreneurship' },
+  { value: 'defence', label: 'Defence & Armed Forces' },
+  { value: 'selfEmployed', label: 'Self Employed / Professional' },
+  { value: 'notWorking', label: 'Not Currently Working' },
+] as const;
+
 const ENUM_VALUES: Partial<Record<FilterKey, readonly string[]>> = {
   maritalStatus: MARITAL_STATUS_OPTIONS.map((o) => o.value),
   diet: DIET_OPTIONS.map((o) => o.value),
@@ -91,4 +101,16 @@ export const NOT_SHARED = 'Not shared';
 
 export function displayValue(value: string | null | undefined): string {
   return typeof value === 'string' && value.trim() ? value : NOT_SHARED;
+}
+
+/**
+ * Member-facing label of a stored enum value. A missing value reads "Not shared";
+ * a value outside the list is shown as stored.
+ */
+export function optionLabel(
+  options: ReadonlyArray<{ value: string; label: string }>,
+  value: string | null | undefined,
+): string {
+  const match = options.find((option) => option.value === value);
+  return match ? match.label : displayValue(value);
 }

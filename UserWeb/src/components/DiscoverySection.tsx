@@ -86,7 +86,7 @@ export function DiscoverySection({ token, onLogout }: DiscoverySectionProps) {
       setRecsError(null);
       try {
         const response = await api.discoveryRecommendations(token);
-        if (current) setRecs((response.items ?? []).slice(0, RECOMMENDATION_LIMIT));
+        if (current) setRecs(response.items.slice(0, RECOMMENDATION_LIMIT));
       } catch (err) {
         if (!current) return;
         if (hasErrorCode(err, 'UNAUTHORIZED')) onLogout();
@@ -171,8 +171,6 @@ export function DiscoverySection({ token, onLogout }: DiscoverySectionProps) {
     setNonce((n) => n + 1);
   }
 
-  const noFiltersActive = activeQuery === '';
-
   return (
     <div className="space-y-10">
       {/* Today's recommendations */}
@@ -196,7 +194,7 @@ export function DiscoverySection({ token, onLogout }: DiscoverySectionProps) {
             </p>
           </Card>
         ) : (
-          <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3" data-testid="recommendations-list">
+          <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3" data-testid="recommendations-list">
             {recs.map((card) => (
               <ProfileCard key={card.profileRef} card={card} backSearch={activeQuery} />
             ))}
@@ -273,15 +271,13 @@ export function DiscoverySection({ token, onLogout }: DiscoverySectionProps) {
             <p className="text-sm text-brand-muted">
               No profiles match your search. Try removing a filter.
             </p>
-            {noFiltersActive ? null : (
-              <Button className="mt-4" variant="outline" onClick={clearFilters}>
-                Clear filters
-              </Button>
-            )}
+            <Button className="mt-4" variant="outline" onClick={clearFilters}>
+              Clear filters
+            </Button>
           </Card>
         ) : (
           <>
-            <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3" data-testid="results-list">
+            <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3" data-testid="results-list">
               {results.map((card) => (
                 <ProfileCard key={card.profileRef} card={card} backSearch={activeQuery} />
               ))}

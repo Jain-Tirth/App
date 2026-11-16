@@ -6,7 +6,11 @@ import {
   formatAge,
   displayValue,
   mergePage,
+  optionLabel,
+  DIET_OPTIONS,
+  EMPLOYMENT_TYPE_OPTIONS,
   EMPTY_FILTERS,
+  MARITAL_STATUS_OPTIONS,
 } from './discovery';
 
 describe('buildSearchParams', () => {
@@ -104,5 +108,23 @@ describe('card formatters', () => {
     expect(displayValue('Surat')).toBe('Surat');
     expect(displayValue(null)).toBe('Not shared');
     expect(displayValue('   ')).toBe('Not shared');
+  });
+});
+
+describe('optionLabel', () => {
+  it('shows the label of a stored enum value, never the raw value', () => {
+    expect(optionLabel(MARITAL_STATUS_OPTIONS, 'neverMarried')).toBe('Never Married');
+    expect(optionLabel(DIET_OPTIONS, 'nonVegetarian')).toBe('Non-Vegetarian');
+    expect(optionLabel(EMPLOYMENT_TYPE_OPTIONS, 'private')).toBe('Private Sector (Corporate / MNC)');
+    expect(optionLabel(EMPLOYMENT_TYPE_OPTIONS, 'governmentPsu')).toBe('Government / PSU Sector');
+  });
+
+  it('reads "Not shared" for a missing value', () => {
+    expect(optionLabel(DIET_OPTIONS, null)).toBe('Not shared');
+    expect(optionLabel(DIET_OPTIONS, '  ')).toBe('Not shared');
+  });
+
+  it('shows a value outside the list as stored', () => {
+    expect(optionLabel(DIET_OPTIONS, 'Jain')).toBe('Jain');
   });
 });

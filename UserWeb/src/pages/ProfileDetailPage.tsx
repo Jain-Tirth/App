@@ -7,7 +7,14 @@ import { ErrorNotice } from '../components/ErrorNotice';
 import { PhotoPlaceholder, VerifiedBadge } from '../components/DiscoveryCards';
 import { Button } from '../components/ui/button';
 import { describeCode, describeError, type FriendlyError } from '../errors/messages';
-import { displayValue, formatAge } from '../lib/discovery';
+import {
+  DIET_OPTIONS,
+  EMPLOYMENT_TYPE_OPTIONS,
+  MARITAL_STATUS_OPTIONS,
+  displayValue,
+  formatAge,
+  optionLabel,
+} from '../lib/discovery';
 import type { ProfileDetail } from '../types';
 
 interface ProfileDetailPageProps {
@@ -42,8 +49,8 @@ function DetailSkeleton() {
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-4 border-b border-brand-border/60 pb-2 text-xs">
-      <dt className="text-brand-muted">{label}</dt>
-      <dd className="text-right font-medium text-brand-charcoal">{value}</dd>
+      <dt className="shrink-0 text-brand-muted">{label}</dt>
+      <dd className="min-w-0 text-right font-medium text-brand-charcoal [overflow-wrap:anywhere]">{value}</dd>
     </div>
   );
 }
@@ -160,8 +167,11 @@ export function ProfileDetailPage({ token, onLogout }: ProfileDetailPageProps) {
               </h2>
               <dl className="space-y-2.5">
                 <Fact label="Height" value={formatHeight(detail.heightCm)} />
-                <Fact label="Marital status" value={displayValue(detail.maritalStatus)} />
-                <Fact label="Diet" value={displayValue(detail.diet)} />
+                <Fact
+                  label="Marital status"
+                  value={optionLabel(MARITAL_STATUS_OPTIONS, detail.maritalStatus)}
+                />
+                <Fact label="Diet" value={optionLabel(DIET_OPTIONS, detail.diet)} />
                 <Fact
                   label="Languages spoken"
                   value={detail.spokenLanguages.length > 0 ? detail.spokenLanguages.join(', ') : displayValue(null)}
@@ -207,7 +217,7 @@ export function ProfileDetailPage({ token, onLogout }: ProfileDetailPageProps) {
               <dl className="space-y-2.5">
                 <Fact label="Education" value={displayValue(detail.education)} />
                 <Fact label="Profession" value={displayValue(detail.profession)} />
-                <Fact label="Employment type" value={displayValue(detail.employmentType)} />
+                <Fact label="Employment type" value={optionLabel(EMPLOYMENT_TYPE_OPTIONS, detail.employmentType)} />
                 <Fact label="Family status" value={displayValue(detail.familyStatus)} />
               </dl>
             </section>
@@ -221,13 +231,13 @@ export function ProfileDetailPage({ token, onLogout }: ProfileDetailPageProps) {
               </h2>
               <div>
                 <h3 className="text-xs font-semibold uppercase tracking-wider">About me</h3>
-                <p className="mt-1 text-sm leading-relaxed text-brand-muted">
+                <p className="mt-1 text-sm leading-relaxed text-brand-muted [overflow-wrap:anywhere]">
                   {displayValue(detail.aboutMyself)}
                 </p>
               </div>
               <div>
                 <h3 className="text-xs font-semibold uppercase tracking-wider">Looking for</h3>
-                <p className="mt-1 text-sm leading-relaxed text-brand-muted">
+                <p className="mt-1 text-sm leading-relaxed text-brand-muted [overflow-wrap:anywhere]">
                   {displayValue(detail.lookingFor)}
                 </p>
               </div>
