@@ -319,8 +319,9 @@ test.describe('AC5 no profile-ID search', () => {
     const doms: string[] = [];
     page.on('request', (r) => urls.push(r.url()));
     page.on('response', (r) => {
+      // No catch: a body that cannot be read rejects here and fails the test, so it can never count as "no profileUid".
       if (r.url().includes(':3101/') && r.request().method() !== 'OPTIONS') {
-        bodies.push(r.text().then((text) => ({ url: r.url(), text })).catch(() => ({ url: r.url(), text: '' })));
+        bodies.push(r.text().then((text) => ({ url: r.url(), text })));
       }
     });
     const snap = async () => { doms.push(await page.content()); urls.push(page.url()); };
@@ -921,7 +922,12 @@ test.describe('AC15 keyboard', () => {
     await more.focus();
     await page.keyboard.press('Enter');
     await expect(resultCards(page)).toHaveCount(45);
-    const link = page.getByTestId('results-list').getByRole('link', { name: 'View profile of Asha', exact: true });
+    // The card link has no aria-label: its accessible name is its own content (photo label and every visible card line).
+    const cardName = `Photo of Asha is being prepared Asha ${ageOf()} years Verified ${d.tag} Jain | Dhobi Engineer`;
+    const link = page.getByTestId('results-list').getByRole('link', { name: cardName, exact: true });
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveAttribute('href', `/profile/${d.page[0].profileRef}`);
+    await expect(link).not.toHaveAttribute('aria-label');
     await link.focus();
     await expect(link).toBeFocused();
     await page.keyboard.press('Enter');

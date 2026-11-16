@@ -217,5 +217,5 @@ export async function withinWidth(page: Page, locator: ReturnType<Page['locator'
   await locator.scrollIntoViewIfNeeded();
   const box = await locator.boundingBox();
   const width = page.viewportSize()?.width ?? 360;
-  return Boolean(box) && box!.x >= 0 && box!.x + box!.width <= width;
+  return box !== null && box.x >= 0 && box.x + box.width <= width;
 }
