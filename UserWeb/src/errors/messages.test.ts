@@ -46,7 +46,7 @@ const FORBIDDEN_PATTERNS: Array<[string, RegExp]> = [
   ['curly brace', /[{}]/],
   ['Error:', /Error:/],
   ['HTTP', /HTTP/],
-  ['status number', /\b[1-5]\d{2}\b/],
+  ['status number', /\b[1-5]\d{2}\b(?!\s+characters)/],
   ['UPPER_SNAKE code', /[A-Z]{2,}_[A-Z_]+/],
   ['undefined', /undefined/],
 ];

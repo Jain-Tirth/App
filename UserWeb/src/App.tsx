@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { api, onProfileNotApproved } from './api';
 import { hasErrorCode } from './apiError';
+import { resetCache } from './lib/shortlistCache';
 import { routeForStatus } from './lib/profileStatus';
 import { ConsentGate } from './components/ConsentPanels';
 import { ErrorNotice } from './components/ErrorNotice';
@@ -54,6 +55,7 @@ function AppRouter() {
   const clearSession = useCallback(() => {
     localStorage.removeItem('user_access_token');
     localStorage.removeItem('user_refresh_token');
+    resetCache();
     setAccessToken(null);
     setRefreshToken(null);
     setProfile(null);

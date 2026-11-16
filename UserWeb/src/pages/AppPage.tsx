@@ -88,7 +88,7 @@ export function AppPage({ token, profile, onLogout }: AppPageProps) {
           </div>
 
           {/* User Status & Sign Out */}
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
             <div className="hidden sm:flex flex-col text-right">
               <div className="flex items-center justify-end gap-1.5">
                 <span className="text-xs font-semibold text-brand-charcoal">

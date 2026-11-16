@@ -12,6 +12,7 @@ import {
   noteEmptyList,
   noteMembership,
 } from '../lib/shortlistCache';
+import { mapWithLimit } from '../lib/concurrency';
 import { isMember, orderLists, validateListName, type MembershipMap } from '../lib/shortlists';
 import type { Shortlist } from '../types';
 import { ErrorNotice } from './ErrorNotice';
@@ -20,6 +21,7 @@ import { Button } from './ui/button';
 import { useDialogFocus } from './useDialogFocus';
 
 export const NOT_NOTIFIED_TEXT = 'People you shortlist are not notified.';
+const WALK_CONCURRENCY = 4;
 
 interface ShortlistDrawerProps {
   token: string;
@@ -64,8 +66,10 @@ export function ShortlistDrawer({ token, profileRef, onClose, onLogout }: Shortl
         token,
         fetched.map((list) => list.id),
       );
-      await Promise.all(
-        fetched.filter((list) => !hasList(token, list.id)).map((list) => deriveList(token, list.id)),
+      await mapWithLimit(
+        fetched.filter((list) => !hasList(token, list.id)),
+        WALK_CONCURRENCY,
+        (list) => deriveList(token, list.id),
       );
       if (!alive.current) return;
       setLists(fetched);
@@ -93,7 +97,7 @@ export function ShortlistDrawer({ token, profileRef, onClose, onLogout }: Shortl
   }
 
   async function toggle(list: Shortlist, checked: boolean) {
-    if (busyLists.current.has(list.id)) return;
+    if (deriving || busyLists.current.has(list.id)) return;
     setBusy(list.id, true);
     setError(null);
     try {
@@ -206,7 +210,7 @@ export function ShortlistDrawer({ token, profileRef, onClose, onLogout }: Shortl
                   type="checkbox"
                   className="h-4 w-4 shrink-0"
                   checked={isMember(members, list.id, profileRef)}
-                  disabled={deriving || busyIds.includes(list.id)}
+                  aria-disabled={deriving || busyIds.includes(list.id)}
                   onChange={(event) => void toggle(list, event.target.checked)}
                 />
                 <span className="min-w-0 [overflow-wrap:anywhere]">{list.name}</span>

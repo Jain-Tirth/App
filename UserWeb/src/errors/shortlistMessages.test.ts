@@ -12,7 +12,7 @@ const FORBIDDEN: Array<[string, RegExp]> = [
   ['curly brace', /[{}]/],
   ['Error:', /Error:/],
   ['HTTP', /HTTP/],
-  ['status number', /\b[1-5]\d{2}\b/],
+  ['status number', /\b[1-5]\d{2}\b(?!\s+characters)/],
   ['UPPER_SNAKE code', /[A-Z]{2,}_[A-Z_]+/],
   ['undefined', /undefined/],
 ];
@@ -46,6 +46,9 @@ describe('shortlist error messages', () => {
     for (const code of SHORTLIST_CODES) expectClean(CODE_MESSAGES[code](failure(code, 409)));
     expectClean(CONTEXT_CODE_MESSAGES['shortlists:PROFILE_NOT_FOUND']);
     expectClean(CONTEXT_CODE_MESSAGES['shortlists:VALIDATION_ERROR']);
+    expectClean('Use 100 characters or fewer.');
+    expect(/\b[1-5]\d{2}\b(?!\s+characters)/.test('Use 100 characters or fewer.')).toBe(false);
+    expect(/\b[1-5]\d{2}\b(?!\s+characters)/.test('Failed with 500 now.')).toBe(true);
   });
 
   it('fixes the sentence of each shortlist code', () => {
