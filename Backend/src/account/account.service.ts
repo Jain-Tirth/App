@@ -20,6 +20,7 @@ import {
   type AccountConfig,
   type AccountRepository,
   type AccountSettings,
+  type AuditContext,
   type Clock,
   type ExportArchive,
   type SettingsPatch,
@@ -55,13 +56,13 @@ export class AccountService {
     return this.repository.updateSettings(userId, patch);
   }
 
-  async logoutAll(userId: string): Promise<{ message: string }> {
-    await this.repository.revokeAllSessions(userId);
+  async logoutAll(userId: string, audit: AuditContext): Promise<{ message: string }> {
+    await this.repository.revokeAllSessions(userId, audit);
 
     return { message: 'Logged out of all devices.' };
   }
 
-  async requestExport(userId: string, password: string) {
+  async requestExport(userId: string, password: string, audit: AuditContext) {
     await this.stepUp.verify(userId, password);
 
     const now = this.clock();
@@ -69,6 +70,7 @@ export class AccountService {
       userId,
       now,
       exportLinkExpiry(now, this.config.exportLinkHours),
+      audit,
     );
 
     if (created.kind === 'alreadyPending') {
@@ -84,7 +86,11 @@ export class AccountService {
   }
 
   /** Serves the archive of the member's own request while its link is valid. */
-  async downloadExport(userId: string, requestId: string): Promise<ExportArchive> {
+  async downloadExport(
+    userId: string,
+    requestId: string,
+    audit: AuditContext,
+  ): Promise<ExportArchive> {
     if (!UUID.test(requestId)) {
       throw exportNotFound();
     }
@@ -101,6 +107,9 @@ export class AccountService {
       throw exportExpired();
     }
 
+    // Recorded before the data leaves: a failed audit write refuses the download.
+    await this.repository.recordExportDownload(userId, request.id, audit);
+
     if (request.archive) {
       return request.archive;
     }
@@ -111,28 +120,33 @@ export class AccountService {
     return stored.archive ?? archive;
   }
 
-  async requestDeletion(userId: string, password: string) {
+  /**
+   * A member who already has a pending deletion cannot reach this route (the
+   * guard confines them to cancelling), so there is no 409: should two
+   * requests race, both receive the one schedule.
+   */
+  async requestDeletion(userId: string, password: string, audit: AuditContext) {
     await this.stepUp.verify(userId, password);
 
     const requestedAt = this.clock();
-    const result = await this.repository.scheduleDeletion(
+    const state = await this.repository.scheduleDeletion(
       userId,
       requestedAt,
       scheduledPurgeAt(requestedAt, this.config.deletionCoolingOffDays),
+      audit,
     );
-
-    if (result.kind === 'alreadyPending') {
-      throw requestAlreadyPending();
-    }
 
     return {
       status: 'pending' as const,
-      requestedAt: result.state.requestedAt.toISOString(),
-      scheduledPurgeAt: result.state.scheduledPurgeAt.toISOString(),
+      requestedAt: state.requestedAt.toISOString(),
+      scheduledPurgeAt: state.scheduledPurgeAt.toISOString(),
     };
   }
 
-  async cancelDeletion(userId: string): Promise<{ message: string }> {
+  async cancelDeletion(
+    userId: string,
+    audit: AuditContext,
+  ): Promise<{ message: string }> {
     const state = await this.repository.findDeletion(userId);
 
     if (!state) {
@@ -143,7 +157,7 @@ export class AccountService {
       throw accountPurged();
     }
 
-    await this.repository.cancelDeletion(userId);
+    await this.repository.cancelDeletion(userId, audit);
 
     return { message: 'Account deletion cancelled.' };
   }

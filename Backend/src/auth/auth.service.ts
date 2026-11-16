@@ -38,6 +38,11 @@ interface DbUserRow {
   gender?: Gender | null;
 }
 
+/** `fn_get_user_by_identifier` also returns the value logout-all bumps. */
+interface DbUserWithSessionRow extends DbUserRow {
+  sessionVersion: number;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -175,7 +180,10 @@ export class AuthService {
     );
     const verifiedUser = verifiedUsers[0];
 
-    const tokens = await this.generateTokens(verifiedUser);
+    const tokens = await this.generateTokens(
+      verifiedUser,
+      await this.currentSessionVersion(verifiedUser.id),
+    );
     const refreshTokenHash = await bcrypt.hash(
       tokens.refreshToken,
       BCRYPT_ROUNDS,
@@ -196,7 +204,7 @@ export class AuthService {
 
   async login(loginDto: LoginDto) {
     const email = loginDto.email.trim().toLowerCase();
-    const user = await this.db.callFunctionSingle<DbUserRow>(
+    const user = await this.db.callFunctionSingle<DbUserWithSessionRow>(
       'fn_get_user_by_identifier',
       [email],
     );
@@ -232,7 +240,7 @@ export class AuthService {
       );
     }
 
-    const tokens = await this.generateTokens(user);
+    const tokens = await this.generateTokens(user, user.sessionVersion);
     const refreshTokenHash = await bcrypt.hash(
       tokens.refreshToken,
       BCRYPT_ROUNDS,
@@ -289,7 +297,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token.');
     }
 
-    const user = await this.db.callFunctionSingle<DbUserRow>(
+    const user = await this.db.callFunctionSingle<DbUserWithSessionRow>(
       'fn_get_user_by_identifier',
       [payload.email],
     );
@@ -299,12 +307,15 @@ export class AuthService {
     }
 
     // A refresh token issued before logout-all is refused even if a session
-    // row was written for it afterwards.
-    if ((payload.sv ?? 0) !== (await this.currentSessionVersion(user.id))) {
+    // row was written for it afterwards. The version is read once, from the
+    // row fetched above, and the new tokens carry that same value: a
+    // logout-all landing after this read leaves the new tokens one version
+    // behind, so the next request refuses them.
+    if ((payload.sv ?? 0) !== user.sessionVersion) {
       throw new UnauthorizedException('Refresh token has been revoked.');
     }
 
-    const tokens = await this.generateTokens(user);
+    const tokens = await this.generateTokens(user, user.sessionVersion);
     const refreshTokenHash = await bcrypt.hash(
       tokens.refreshToken,
       BCRYPT_ROUNDS,
@@ -330,12 +341,15 @@ export class AuthService {
     };
   }
 
-  private async generateTokens(user: { id: string; email: string; role?: Role }): Promise<AuthTokens> {
+  private async generateTokens(
+    user: { id: string; email: string; role?: Role },
+    sessionVersion: number,
+  ): Promise<AuthTokens> {
     const payload: AuthTokenPayload = {
       sub: user.id,
       email: user.email,
       role: user.role ?? 'user',
-      sv: await this.currentSessionVersion(user.id),
+      sv: sessionVersion,
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -352,14 +366,18 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
-  /** The value logout-all bumps; tokens issued now carry it. */
+  /** Only for callers without the member row at hand (OTP verification). */
   private async currentSessionVersion(userId: string): Promise<number> {
     const result = await this.db.query<{ sessionVersion: number }>(
       `SELECT "sessionVersion" FROM "Users" WHERE "id" = $1`,
       [userId],
     );
 
-    return result.rows[0]?.sessionVersion ?? 0;
+    if (result.rows.length === 0) {
+      throw new UnauthorizedException('User no longer exists.');
+    }
+
+    return result.rows[0].sessionVersion;
   }
 
   private getRefreshTokenExpiryDate(): Date {

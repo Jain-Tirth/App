@@ -63,22 +63,42 @@ export type CreateExportResult =
   | { kind: 'created'; request: ExportRequestRecord }
   | { kind: 'alreadyPending' };
 
-export type ScheduleDeletionResult =
-  | { kind: 'scheduled'; state: DeletionState }
-  | { kind: 'alreadyPending' };
+/** Member-initiated events written to "AccountAuditLog" (SEC-16). */
+export const ACCOUNT_AUDIT_EVENTS = [
+  'export_requested',
+  'export_downloaded',
+  'deletion_requested',
+  'deletion_cancelled',
+  'purge_executed',
+  'logout_all',
+] as const;
+export type AccountAuditEvent = (typeof ACCOUNT_AUDIT_EVENTS)[number];
+
+/** Where a request came from, the same two fields consent records keep. */
+export interface AuditContext {
+  ip: string;
+  userAgent: string;
+}
 
 /** Settings, session revocation, export and deletion state of one member. */
 export interface AccountRepository {
   getSettings(userId: string): Promise<AccountSettings | null>;
   updateSettings(userId: string, patch: SettingsPatch): Promise<AccountSettings>;
-  /** Revokes every refresh token and access token the member holds. */
-  revokeAllSessions(userId: string): Promise<void>;
+  /**
+   * Revokes every refresh token and access token the member holds, and records
+   * the event in the same transaction.
+   */
+  revokeAllSessions(userId: string, audit: AuditContext): Promise<void>;
 
-  /** Creates a pending request unless an unexpired pending one exists. */
+  /**
+   * Creates a pending request unless an unexpired pending one exists, and
+   * records the event in the same transaction.
+   */
   createExportRequest(
     userId: string,
     now: Date,
     expiresAt: Date,
+    audit: AuditContext,
   ): Promise<CreateExportResult>;
   /** Only the member's own request; another member's id is not found. */
   findExportRequest(
@@ -92,13 +112,26 @@ export interface AccountRepository {
     now: Date,
   ): Promise<ExportRequestRecord>;
 
+  /** Records that the member is being served the archive of this request. */
+  recordExportDownload(
+    userId: string,
+    requestId: string,
+    audit: AuditContext,
+  ): Promise<void>;
+
+  /**
+   * Schedules the purge and records the event in one transaction. A member
+   * who already has a schedule keeps it (the call is idempotent).
+   */
   scheduleDeletion(
     userId: string,
     requestedAt: Date,
     purgeAt: Date,
-  ): Promise<ScheduleDeletionResult>;
+    audit: AuditContext,
+  ): Promise<DeletionState>;
   findDeletion(userId: string): Promise<DeletionState | null>;
-  cancelDeletion(userId: string): Promise<void>;
+  /** Clears the schedule and records the event in one transaction. */
+  cancelDeletion(userId: string, audit: AuditContext): Promise<void>;
 }
 
 export interface FailureWindow {
@@ -106,11 +139,24 @@ export interface FailureWindow {
   oldestAt: Date | null;
 }
 
+/** The reads and the write of one step-up attempt, valid inside the lock. */
+export interface StepUpAttempt {
+  findPasswordHash(): Promise<string | null>;
+  failuresSince(since: Date): Promise<FailureWindow>;
+  recordFailure(at: Date): Promise<void>;
+}
+
 /** What the password step-up needs from storage. */
 export interface StepUpRepository {
-  findPasswordHash(userId: string): Promise<string | null>;
-  failuresSince(userId: string, since: Date): Promise<FailureWindow>;
-  recordFailure(userId: string, at: Date): Promise<void>;
+  /**
+   * Runs `work` while holding the member's step-up lock, on one connection,
+   * and commits what it recorded. Attempts of one member never overlap, so a
+   * burst cannot read the same failure count; other members are not blocked.
+   */
+  runExclusive<T>(
+    userId: string,
+    work: (attempt: StepUpAttempt) => Promise<T>,
+  ): Promise<T>;
 }
 
 export interface PurgeCandidate {
@@ -123,8 +169,9 @@ export interface PurgeRepository {
   /** Object-storage keys that belong to the member and must be removed too. */
   findStorageKeys(userId: string): Promise<string[]>;
   /**
-   * Strips the retained evidence rows and removes the member's rows in one
-   * transaction. Returns false when the account is no longer due.
+   * Strips the retained evidence rows, records the purge and removes the
+   * member's rows in one transaction. Returns false when the account is no
+   * longer due.
    */
   purge(userId: string, now: Date): Promise<boolean>;
 }

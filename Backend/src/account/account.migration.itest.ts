@@ -32,6 +32,65 @@ async function columns(client: { query: Pool['query'] }, table: string) {
   return result.rows.map((row) => row.column_name as string);
 }
 
+function parts(file: string) {
+  const text = readFileSync(join(__dirname, '../../migrations', file), 'utf8');
+  const [up, down] = text.split('-- Down Migration');
+
+  return { up: up.replace('-- Up Migration', ''), down };
+}
+
+describe('story 9 follow-up migrations', () => {
+  const trigger = parts('1789661000000_consent-anonymise-needs-pending-purge.sql');
+  const audit = parts('1789661100000_account-audit-log.sql');
+  const identifier = parts('1789661200000_user-identifier-session-version.sql');
+
+  it('revert in reverse order and apply again', async () => {
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+      await client.query(identifier.down);
+      await client.query(audit.down);
+      await client.query(trigger.down);
+
+      const tables = await client.query(
+        `SELECT table_name FROM information_schema.tables WHERE table_name = 'AccountAuditLog'`,
+      );
+      const functions = await client.query(
+        `SELECT proname FROM pg_proc WHERE proname IN ('fn_account_purge_permits', 'fn_account_audit_log_append_only')`,
+      );
+      const returned = await client.query(
+        `SELECT count(*)::int AS n FROM pg_proc p
+         WHERE p.proname = 'fn_get_user_by_identifier'
+           AND pg_get_function_result(p.oid) LIKE '%sessionVersion%'`,
+      );
+
+      expect(tables.rows).toHaveLength(0);
+      expect(functions.rows).toHaveLength(0);
+      expect(returned.rows[0].n).toBe(0);
+
+      await client.query(trigger.up);
+      await client.query(audit.up);
+      await client.query(identifier.up);
+
+      const back = await client.query(
+        `SELECT table_name FROM information_schema.tables WHERE table_name = 'AccountAuditLog'`,
+      );
+      const withVersion = await client.query(
+        `SELECT count(*)::int AS n FROM pg_proc p
+         WHERE p.proname = 'fn_get_user_by_identifier'
+           AND pg_get_function_result(p.oid) LIKE '%sessionVersion%'`,
+      );
+
+      expect(back.rows).toHaveLength(1);
+      expect(withVersion.rows[0].n).toBe(1);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+});
+
 describe('account settings and deletion migration', () => {
   it('reverts to the previous schema and applies again', async () => {
     const client = await pool.connect();

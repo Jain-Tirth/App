@@ -56,6 +56,8 @@ const purge = new AccountPurgeService(
 );
 const strategy = new JwtStrategy(db as any);
 
+const AUDIT = { ip: '203.0.113.9', userAgent: 'itest-agent' };
+
 const tag = randomBytes(4).toString('hex');
 const tagDigits = String(parseInt(randomBytes(4).toString('hex'), 16) % 1e9).padStart(9, '0');
 let sequence = 0;
@@ -169,7 +171,7 @@ describe('logout-all', () => {
     expect(await strategy.validate(token(a.userId, 0))).toMatchObject({ sub: a.userId });
     expect(await strategy.validate(token(a.userId))).toMatchObject({ sub: a.userId });
 
-    await service.logoutAll(a.userId);
+    await service.logoutAll(a.userId, AUDIT);
 
     expect(await rejection(strategy.validate(token(a.userId, 0)))).toBe('Your session has ended. Log in again.');
     expect(await rejection(strategy.validate(token(a.userId)))).toBe('Your session has ended. Log in again.');
@@ -195,12 +197,38 @@ describe('step-up', () => {
     const b = await seed('female');
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      expect(await rejection(service.requestExport(a.userId, 'bad'))).toBe('STEP_UP_FAILED');
+      expect(await rejection(service.requestExport(a.userId, 'bad', AUDIT))).toBe('STEP_UP_FAILED');
     }
 
-    expect(await rejection(service.requestExport(a.userId, PASSWORD))).toBe('RATE_LIMITED');
+    expect(await rejection(service.requestExport(a.userId, PASSWORD, AUDIT))).toBe('RATE_LIMITED');
     expect(await count('AccountExportRequests', 'userId', a.userId)).toBe(0);
-    expect((await service.requestExport(b.userId, PASSWORD)).status).toBe('pending');
+    expect((await service.requestExport(b.userId, PASSWORD, AUDIT)).status).toBe('pending');
+  });
+
+  it('records at most the configured failures when wrong passwords arrive in parallel', async () => {
+    const member = await seed('male');
+    const outcomes = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        rejection(service.requestExport(member.userId, 'wrong', AUDIT)),
+      ),
+    );
+
+    expect(outcomes.filter((code) => code === 'STEP_UP_FAILED')).toHaveLength(5);
+    expect(outcomes.filter((code) => code === 'RATE_LIMITED')).toHaveLength(3);
+    expect(await count('StepUpFailures', 'userId', member.userId)).toBe(5);
+    expect(await count('AccountExportRequests', 'userId', member.userId)).toBe(0);
+  });
+
+  it('does not let a parallel burst hide the right password behind the limit', async () => {
+    const member = await seed('female');
+    const outcomes = await Promise.all([
+      rejection(service.requestExport(member.userId, PASSWORD, AUDIT)),
+      rejection(service.requestExport(member.userId, 'wrong', AUDIT)),
+      rejection(service.requestExport(member.userId, 'wrong', AUDIT)),
+    ]);
+
+    expect(outcomes.filter((code) => code === 'none')).toHaveLength(1);
+    expect(await count('StepUpFailures', 'userId', member.userId)).toBe(2);
   });
 });
 
@@ -244,12 +272,12 @@ describe('export', () => {
       [list.rows[0].id, b.userId],
     );
 
-    const requested = await service.requestExport(a.userId, PASSWORD);
+    const requested = await service.requestExport(a.userId, PASSWORD, AUDIT);
 
     expect(requested.status).toBe('pending');
-    expect(await rejection(service.requestExport(a.userId, PASSWORD))).toBe('REQUEST_ALREADY_PENDING');
+    expect(await rejection(service.requestExport(a.userId, PASSWORD, AUDIT))).toBe('REQUEST_ALREADY_PENDING');
 
-    const archive = await service.downloadExport(a.userId, requested.requestId);
+    const archive = await service.downloadExport(a.userId, requested.requestId, AUDIT);
     const text = JSON.stringify(archive);
 
     expect(archive.format).toBe('dhobi-matrimony-export');
@@ -280,9 +308,24 @@ describe('export', () => {
     expect(text).not.toContain('10.0.0.1');
 
     // Owned by the member, expiring after 24 hours.
-    expect(await rejection(service.downloadExport(b.userId, requested.requestId))).toBe('EXPORT_NOT_FOUND');
+    expect(await rejection(service.downloadExport(b.userId, requested.requestId, AUDIT))).toBe('EXPORT_NOT_FOUND');
     now = new Date(now.getTime() + 24 * 60 * 60 * 1000 + 1000);
-    expect(await rejection(service.downloadExport(a.userId, requested.requestId))).toBe('EXPORT_EXPIRED');
+    expect(await rejection(service.downloadExport(a.userId, requested.requestId, AUDIT))).toBe('EXPORT_EXPIRED');
+
+    // Requested once and downloaded once; the refused downloads left no row.
+    const trail = await pool.query(
+      `SELECT "eventType", "requestId", "ip", "userAgent" FROM "AccountAuditLog"
+       WHERE "userId" = $1 ORDER BY "createdAt", "eventType"`,
+      [a.userId],
+    );
+
+    expect(trail.rows.map((row) => row.eventType).sort()).toEqual([
+      'export_downloaded',
+      'export_requested',
+    ]);
+    expect(trail.rows.every((row) => row.requestId === requested.requestId)).toBe(true);
+    expect(trail.rows[0]).toMatchObject({ ip: AUDIT.ip, userAgent: AUDIT.userAgent });
+    expect(await count('AccountAuditLog', 'userId', b.userId)).toBe(0);
   });
 });
 
@@ -294,14 +337,30 @@ describe('deletion and purge', () => {
 
     expect(await discovery.findVisibleProfile(caller.userId, AGES, seen.profileRef)).not.toBeNull();
 
-    const scheduled = await service.requestDeletion(seen.userId, PASSWORD);
+    const scheduled = await service.requestDeletion(seen.userId, PASSWORD, AUDIT);
 
     expect(scheduled.scheduledPurgeAt).toBe(
       new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     );
     expect(await discovery.findVisibleProfile(caller.userId, AGES, seen.profileRef)).toBeNull();
 
-    await service.cancelDeletion(seen.userId);
+    // A repeated request keeps the first schedule and adds no second audit row.
+    now = new Date(now.getTime() + 60 * 1000);
+    expect((await service.requestDeletion(seen.userId, PASSWORD, AUDIT)).scheduledPurgeAt).toBe(
+      scheduled.scheduledPurgeAt,
+    );
+
+    await service.cancelDeletion(seen.userId, AUDIT);
+
+    const trail = await pool.query(
+      `SELECT "eventType" FROM "AccountAuditLog" WHERE "userId" = $1 ORDER BY "createdAt", "eventType"`,
+      [seen.userId],
+    );
+
+    expect(trail.rows.map((row) => row.eventType).sort()).toEqual([
+      'deletion_cancelled',
+      'deletion_requested',
+    ]);
 
     expect(await discovery.findVisibleProfile(caller.userId, AGES, seen.profileRef)).not.toBeNull();
     expect((await pool.query(`SELECT "accountStatus" FROM "Users" WHERE "id" = $1`, [seen.userId])).rows[0].accountStatus).toBe('active');
@@ -384,14 +443,18 @@ describe('deletion and purge', () => {
        RETURNING "id"`,
       [admin.rows[0].id, member.userId],
     );
-    const exportRequest = await service.requestExport(member.userId, PASSWORD);
+    const exportRequest = await service.requestExport(member.userId, PASSWORD, AUDIT);
 
     expect(exportRequest.status).toBe('pending');
+    await service.logoutAll(member.userId, AUDIT);
 
     const requestedAt = new Date();
 
     now = requestedAt;
-    const scheduled = await service.requestDeletion(member.userId, PASSWORD);
+    const scheduled = await service.requestDeletion(member.userId, PASSWORD, AUDIT);
+    const purgesBefore = await pool.query(
+      `SELECT count(*)::int AS n FROM "AccountAuditLog" WHERE "eventType" = 'purge_executed'`,
+    );
     const boundary = new Date(scheduled.scheduledPurgeAt);
 
     // Day before the boundary: nothing is removed.
@@ -446,6 +509,26 @@ describe('deletion and purge', () => {
       textSnapshot: 'I agree',
     });
 
+    // The member's account events stay, with the member link, ip and user
+    // agent cleared; the purge added one row of its own.
+    const keptEvents = await pool.query(
+      `SELECT "eventType", "userId", "ip", "userAgent", "requestId" FROM "AccountAuditLog"
+       WHERE "requestId" = $1 OR ("eventType" IN ('logout_all', 'deletion_requested')
+                                  AND "userId" IS NULL AND "createdAt" >= $2)`,
+      [exportRequest.requestId, new Date(requestedAt.getTime() - 60 * 1000)],
+    );
+    const eventTypes = keptEvents.rows.map((row) => row.eventType);
+
+    expect(eventTypes).toEqual(expect.arrayContaining(['export_requested', 'deletion_requested', 'logout_all']));
+    expect(keptEvents.rows.every((row) => row.userId === null && row.ip === '' && row.userAgent === '')).toBe(true);
+    expect(await count('AccountAuditLog', 'userId', member.userId)).toBe(0);
+
+    const purgesAfter = await pool.query(
+      `SELECT count(*)::int AS n FROM "AccountAuditLog" WHERE "eventType" = 'purge_executed' AND "userId" IS NULL`,
+    );
+
+    expect(purgesAfter.rows[0].n).toBe(purgesBefore.rows[0].n + 1);
+
     const keptAudit = await pool.query(`SELECT * FROM "AdminAuditLog" WHERE "id" = $1`, [audit.rows[0].id]);
 
     expect(keptAudit.rows).toHaveLength(1);
@@ -478,5 +561,61 @@ describe('deletion and purge', () => {
     await expect(
       pool.query(`DELETE FROM "ConsentRecords" WHERE "id" = $1`, [record.rows[0].id]),
     ).rejects.toThrow(/CONSENT_RECORDS_APPEND_ONLY/);
+  });
+
+  const ANONYMISE = `UPDATE "ConsentRecords"
+                     SET "userId" = NULL, "userName" = '', "ip" = '', "userAgent" = ''
+                     WHERE "id" = $1`;
+
+  it('refuses to anonymise a live member`s consent row, even with the permitted shape', async () => {
+    const member = await seed('female');
+    const record = await pool.query(
+      `INSERT INTO "ConsentRecords"
+         ("userId", "userName", "code", "version", "documentHash", "textSnapshot", "expiresAt")
+       VALUES ($1, 'Live Member', 'terms', '1.0', 'h', 'I agree', now() + interval '1 year') RETURNING "id"`,
+      [member.userId],
+    );
+
+    await expect(pool.query(ANONYMISE, [record.rows[0].id])).rejects.toThrow(/CONSENT_RECORDS_APPEND_ONLY/);
+
+    // Naming the member as the purge target is not enough without a schedule.
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+      await client.query(`SELECT set_config('app.purge_user_id', $1, true)`, [member.userId]);
+      await expect(client.query(ANONYMISE, [record.rows[0].id])).rejects.toThrow(/CONSENT_RECORDS_APPEND_ONLY/);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+
+    // A pending deletion alone, without the purge running, is not enough either.
+    await service.requestDeletion(member.userId, PASSWORD, AUDIT);
+    await expect(pool.query(ANONYMISE, [record.rows[0].id])).rejects.toThrow(/CONSENT_RECORDS_APPEND_ONLY/);
+
+    const kept = await pool.query(`SELECT "userId", "userName" FROM "ConsentRecords" WHERE "id" = $1`, [record.rows[0].id]);
+
+    expect(kept.rows[0]).toEqual({ userId: member.userId, userName: 'Live Member' });
+
+    // Leave no due-in-30-days member behind for the purge test of the next run.
+    await service.cancelDeletion(member.userId, AUDIT);
+  });
+
+  it('keeps the account audit log append-only', async () => {
+    const member = await seed('male');
+
+    await service.logoutAll(member.userId, AUDIT);
+
+    await expect(
+      pool.query(`UPDATE "AccountAuditLog" SET "eventType" = 'purge_executed' WHERE "userId" = $1`, [member.userId]),
+    ).rejects.toThrow(/ACCOUNT_AUDIT_LOG_APPEND_ONLY/);
+    await expect(
+      pool.query(`UPDATE "AccountAuditLog" SET "userId" = NULL, "ip" = '', "userAgent" = '' WHERE "userId" = $1`, [member.userId]),
+    ).rejects.toThrow(/ACCOUNT_AUDIT_LOG_APPEND_ONLY/);
+    await expect(
+      pool.query(`DELETE FROM "AccountAuditLog" WHERE "userId" = $1`, [member.userId]),
+    ).rejects.toThrow(/ACCOUNT_AUDIT_LOG_APPEND_ONLY/);
+    expect(await count('AccountAuditLog', 'userId', member.userId)).toBe(1);
   });
 });

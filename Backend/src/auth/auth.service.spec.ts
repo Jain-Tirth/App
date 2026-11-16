@@ -1,4 +1,5 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import type { JwtService } from '@nestjs/jwt';
 import type { ConsentsService } from '../consents/consents.service';
 import type { ValidatedConsent } from '../consents/consent.types';
@@ -131,6 +132,111 @@ const registerDto = (): RegisterDto =>
       { code: 'id_processing', version: '1.0', documentHash: 'a'.repeat(64) },
     ],
   }) as RegisterDto;
+
+const USER_ID = '22222222-2222-2222-2222-222222222222';
+const REFRESH_TOKEN = 'refresh-token-value';
+
+/**
+ * The member row is read once. A second read of "Users" answers 7, a value no
+ * test expects in a token, so any extra read shows up as a wrong claim.
+ */
+function sessionHarness(row: { sessionVersion: number } | null, tokenSv?: number) {
+  const signed: Array<{ sv?: number }> = [];
+  const db = {
+    query: jest.fn(async () => ({ rows: row ? [{ sessionVersion: 7 }] : [] })),
+    callFunctionSingle: jest.fn(async (name: string) => {
+      if (name === 'fn_get_user_session') {
+        return {
+          userId: USER_ID,
+          refreshTokenHash: bcrypt.hashSync(REFRESH_TOKEN, 4),
+          refreshTokenExpiresAt: new Date(Date.now() + 86_400_000),
+        };
+      }
+
+      return row
+        ? {
+            id: USER_ID,
+            email: 'asha@example.com',
+            role: 'user',
+            accountStatus: 'active',
+            mobileVerified: true,
+            passwordHash: bcrypt.hashSync('whatever', 4),
+            ...row,
+          }
+        : null;
+    }),
+    callFunction: jest.fn(async () => []),
+  };
+  const jwt = {
+    verifyAsync: jest.fn(async () => ({
+      sub: USER_ID,
+      email: 'asha@example.com',
+      role: 'user',
+      sv: tokenSv,
+    })),
+    signAsync: jest.fn(async (payload: { sv?: number }) => {
+      signed.push(payload);
+      return 'signed';
+    }),
+  };
+  const service = new AuthService(
+    db as unknown as DatabaseService,
+    jwt as unknown as JwtService,
+    {} as OtpService,
+    {} as ConsentsService,
+  );
+
+  return { service, db, signed };
+}
+
+describe('AuthService session version', () => {
+  it('refuses a refresh token issued before logout-all', async () => {
+    const { service, signed } = sessionHarness({ sessionVersion: 1 }, 0);
+
+    await expect(
+      service.refreshTokens({ refreshToken: REFRESH_TOKEN }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(signed).toHaveLength(0);
+  });
+
+  it('signs the new tokens with the version it compared, from one read', async () => {
+    const { service, db, signed } = sessionHarness({ sessionVersion: 3 }, 3);
+
+    await service.refreshTokens({ refreshToken: REFRESH_TOKEN });
+
+    expect(db.query).not.toHaveBeenCalled();
+    expect(signed.map((payload) => payload.sv)).toEqual([3, 3]);
+  });
+
+  it('signs login tokens with the version of the fetched row', async () => {
+    const { service, db, signed } = sessionHarness({ sessionVersion: 2 });
+
+    await service.login({ email: 'asha@example.com', password: 'whatever' });
+
+    expect(db.query).not.toHaveBeenCalled();
+    expect(signed.every((payload) => payload.sv === 2)).toBe(true);
+  });
+
+  it('answers 401 when the member row is missing while issuing tokens', async () => {
+    const { service, db } = sessionHarness(null);
+
+    db.callFunction.mockResolvedValueOnce([
+      { id: USER_ID, email: 'asha@example.com', role: 'user' },
+    ] as never);
+    db.callFunctionSingle.mockResolvedValueOnce({
+      id: USER_ID,
+      email: 'asha@example.com',
+    });
+
+    await expect(
+      service.verifyOtp({
+        countryCode: '+91',
+        mobileNumber: '9876543210',
+        otpCode: '1234',
+      } as never),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});
 
 const context: ClientRequestContext = {
   ip: '203.0.113.5',

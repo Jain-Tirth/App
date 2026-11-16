@@ -1564,13 +1564,11 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: '`STEP_UP_FAILED` (wrong password)'
+          description: '`STEP_UP_FAILED` (wrong password) or `ACCOUNT_DELETION_PENDING` (a deletion is already scheduled; there is no 409 for this route)'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
-        '409':
-          $ref: '#/components/responses/RequestAlreadyPending'
         '429':
           $ref: '#/components/responses/RateLimited'
     delete:

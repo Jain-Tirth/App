@@ -20,7 +20,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       connectionString,
       max: 20,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: 10000,
     });
 
     this.pool.on('error', (err) => {

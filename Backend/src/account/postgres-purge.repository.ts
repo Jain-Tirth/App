@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import type { PurgeCandidate, PurgeRepository } from './account.types';
+import { recordAccountAudit } from './postgres-account-audit';
 
 type Db = Pick<DatabaseService, 'query' | 'transaction'>;
 
@@ -35,8 +36,9 @@ export class PostgresPurgeRepository implements PurgeRepository {
 
   /**
    * Kept, with identity stripped: "ConsentRecords" (userId, userName, ip and
-   * userAgent cleared) and "AdminAuditLog" (the link to the member, notes, ip
-   * and user agent cleared). Everything else the member owns goes with the
+   * userAgent cleared), "AccountAuditLog" (userId, ip and user agent cleared,
+   * plus one new purge_executed row) and "AdminAuditLog" (the link to the
+   * member, notes, ip and user agent cleared). Everything else the member owns goes with the
    * "Users" row (ON DELETE CASCADE) or is deleted explicitly below because its
    * foreign key is RESTRICT.
    */
@@ -55,12 +57,28 @@ export class PostgresPurgeRepository implements PurgeRepository {
         return false;
       }
 
+      // Names the member for the append-only triggers: the anonymising
+      // updates below are allowed only for this member, only in this
+      // transaction (is_local), and only while the schedule row exists.
+      await client.query(`SELECT set_config('app.purge_user_id', $1, true)`, [userId]);
       await client.query(
         `UPDATE "ConsentRecords"
          SET "userId" = NULL, "userName" = '', "ip" = '', "userAgent" = ''
          WHERE "userId" = $1`,
         [userId],
       );
+      await client.query(
+        `UPDATE "AccountAuditLog"
+         SET "userId" = NULL, "ip" = '', "userAgent" = ''
+         WHERE "userId" = $1`,
+        [userId],
+      );
+      // The purge's own row carries no member link: the member is gone.
+      await recordAccountAudit(client, {
+        userId: null,
+        eventType: 'purge_executed',
+        context: { ip: '', userAgent: '' },
+      });
       await client.query(
         `UPDATE "AdminAuditLog"
          SET "targetId" = CASE WHEN "targetId" = $1 THEN NULL ELSE "targetId" END,

@@ -4,14 +4,15 @@ import {
   NOTIFICATION_KEYS,
   type AccountRepository,
   type AccountSettings,
+  type AuditContext,
   type CreateExportResult,
   type DeletionState,
   type ExportArchive,
   type ExportRequestRecord,
   type NotificationPrefs,
-  type ScheduleDeletionResult,
   type SettingsPatch,
 } from './account.types';
+import { recordAccountAudit } from './postgres-account-audit';
 
 type Db = Pick<DatabaseService, 'query' | 'transaction'>;
 
@@ -86,7 +87,7 @@ export class PostgresAccountRepository implements AccountRepository {
     return toSettings(result.rows[0]);
   }
 
-  async revokeAllSessions(userId: string): Promise<void> {
+  async revokeAllSessions(userId: string, audit: AuditContext): Promise<void> {
     await this.db.transaction(async (client) => {
       await client.query(
         `UPDATE "Users" SET "sessionVersion" = "sessionVersion" + 1,
@@ -95,6 +96,7 @@ export class PostgresAccountRepository implements AccountRepository {
         [userId],
       );
       await client.query(`DELETE FROM "UserSessions" WHERE "userId" = $1`, [userId]);
+      await recordAccountAudit(client, { userId, eventType: 'logout_all', context: audit });
     });
   }
 
@@ -102,6 +104,7 @@ export class PostgresAccountRepository implements AccountRepository {
     userId: string,
     now: Date,
     expiresAt: Date,
+    audit: AuditContext,
   ): Promise<CreateExportResult> {
     return this.db.transaction(async (client) => {
       // The member row is the lock that serialises concurrent requests.
@@ -125,8 +128,26 @@ export class PostgresAccountRepository implements AccountRepository {
         [userId, now, expiresAt],
       );
 
+      await recordAccountAudit(client, {
+        userId,
+        eventType: 'export_requested',
+        requestId: created.rows[0].id,
+        context: audit,
+      });
+
       return { kind: 'created', request: toExportRequest(created.rows[0]) } as const;
     });
+  }
+
+  async recordExportDownload(
+    userId: string,
+    requestId: string,
+    audit: AuditContext,
+  ): Promise<void> {
+    await recordAccountAudit(
+      { query: (sql, params) => this.db.query(sql, params) },
+      { userId, eventType: 'export_downloaded', requestId, context: audit },
+    );
   }
 
   async findExportRequest(
@@ -261,19 +282,41 @@ export class PostgresAccountRepository implements AccountRepository {
     userId: string,
     requestedAt: Date,
     purgeAt: Date,
-  ): Promise<ScheduleDeletionResult> {
-    const result = await this.db.query(
-      `UPDATE "Users"
-       SET "deletionRequestedAt" = $2, "deletionScheduledPurgeAt" = $3,
-           "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $1 AND "deletionRequestedAt" IS NULL
-       RETURNING "deletionRequestedAt", "deletionScheduledPurgeAt"`,
-      [userId, requestedAt, purgeAt],
-    );
+    audit: AuditContext,
+  ): Promise<DeletionState> {
+    return this.db.transaction(async (client) => {
+      const current = await client.query(
+        `SELECT "deletionRequestedAt", "deletionScheduledPurgeAt" FROM "Users"
+         WHERE "id" = $1 FOR UPDATE`,
+        [userId],
+      );
 
-    return result.rows[0]
-      ? { kind: 'scheduled', state: toDeletion(result.rows[0]) }
-      : { kind: 'alreadyPending' };
+      if (current.rows.length === 0) {
+        throw new Error(`Member ${userId} not found while scheduling deletion.`);
+      }
+
+      // Two parallel requests: the second finds the schedule the first made.
+      if (current.rows[0].deletionRequestedAt) {
+        return toDeletion(current.rows[0]);
+      }
+
+      const updated = await client.query(
+        `UPDATE "Users"
+         SET "deletionRequestedAt" = $2, "deletionScheduledPurgeAt" = $3,
+             "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "id" = $1
+         RETURNING "deletionRequestedAt", "deletionScheduledPurgeAt"`,
+        [userId, requestedAt, purgeAt],
+      );
+
+      await recordAccountAudit(client, {
+        userId,
+        eventType: 'deletion_requested',
+        context: audit,
+      });
+
+      return toDeletion(updated.rows[0]);
+    });
   }
 
   async findDeletion(userId: string): Promise<DeletionState | null> {
@@ -286,13 +329,24 @@ export class PostgresAccountRepository implements AccountRepository {
     return result.rows[0] ? toDeletion(result.rows[0]) : null;
   }
 
-  async cancelDeletion(userId: string): Promise<void> {
-    await this.db.query(
-      `UPDATE "Users"
-       SET "deletionRequestedAt" = NULL, "deletionScheduledPurgeAt" = NULL,
-           "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $1`,
-      [userId],
-    );
+  async cancelDeletion(userId: string, audit: AuditContext): Promise<void> {
+    await this.db.transaction(async (client) => {
+      const cleared = await client.query(
+        `UPDATE "Users"
+         SET "deletionRequestedAt" = NULL, "deletionScheduledPurgeAt" = NULL,
+             "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "id" = $1 AND "deletionRequestedAt" IS NOT NULL
+         RETURNING "id"`,
+        [userId],
+      );
+
+      if (cleared.rows.length > 0) {
+        await recordAccountAudit(client, {
+          userId,
+          eventType: 'deletion_cancelled',
+          context: audit,
+        });
+      }
+    });
   }
 }

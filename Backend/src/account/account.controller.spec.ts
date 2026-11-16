@@ -23,6 +23,7 @@ import {
   type AccountSettings,
   type ExportRequestRecord,
   type FailureWindow,
+  type StepUpAttempt,
   type StepUpRepository,
 } from './account.types';
 import { StepUpService } from './step-up.service';
@@ -53,6 +54,7 @@ class InMemoryAccount implements AccountRepository, StepUpRepository {
   deletions = new Map<string, { requestedAt: Date; scheduledPurgeAt: Date }>();
   failures: { userId: string; at: Date }[] = [];
   revoked: string[] = [];
+  audits: { userId: string; event: string; requestId?: string }[] = [];
   hash = bcrypt.hashSync(PASSWORD, 4);
   private seq = 0;
 
@@ -85,6 +87,7 @@ class InMemoryAccount implements AccountRepository, StepUpRepository {
 
   async revokeAllSessions(userId: string) {
     this.revoked.push(userId);
+    this.audits.push({ userId, event: 'logout_all' });
   }
 
   async createExportRequest(userId: string, now: Date, expiresAt: Date) {
@@ -110,6 +113,7 @@ class InMemoryAccount implements AccountRepository, StepUpRepository {
     };
 
     this.exports.push(request);
+    this.audits.push({ userId, event: 'export_requested', requestId: request.id });
 
     return { kind: 'created' as const, request };
   }
@@ -135,15 +139,18 @@ class InMemoryAccount implements AccountRepository, StepUpRepository {
   }
 
   async scheduleDeletion(userId: string, requestedAt: Date, purgeAt: Date) {
-    if (this.deletions.has(userId)) {
-      return { kind: 'alreadyPending' as const };
+    const existing = this.deletions.get(userId);
+
+    if (existing) {
+      return existing;
     }
 
     const state = { requestedAt, scheduledPurgeAt: purgeAt };
 
     this.deletions.set(userId, state);
+    this.audits.push({ userId, event: 'deletion_requested' });
 
-    return { kind: 'scheduled' as const, state };
+    return state;
   }
 
   async findDeletion(userId: string) {
@@ -152,25 +159,30 @@ class InMemoryAccount implements AccountRepository, StepUpRepository {
 
   async cancelDeletion(userId: string) {
     this.deletions.delete(userId);
+    this.audits.push({ userId, event: 'deletion_cancelled' });
   }
 
-  async findPasswordHash() {
-    return this.hash;
+  async recordExportDownload(userId: string, requestId: string) {
+    this.audits.push({ userId, event: 'export_downloaded', requestId });
   }
 
-  async failuresSince(userId: string, since: Date): Promise<FailureWindow> {
-    const mine = this.failures
-      .filter((item) => item.userId === userId && item.at.getTime() > since.getTime())
-      .map((item) => item.at.getTime());
+  async runExclusive<T>(userId: string, work: (attempt: StepUpAttempt) => Promise<T>) {
+    return work({
+      findPasswordHash: async () => this.hash,
+      failuresSince: async (since: Date): Promise<FailureWindow> => {
+        const mine = this.failures
+          .filter((item) => item.userId === userId && item.at.getTime() > since.getTime())
+          .map((item) => item.at.getTime());
 
-    return {
-      count: mine.length,
-      oldestAt: mine.length ? new Date(Math.min(...mine)) : null,
-    };
-  }
-
-  async recordFailure(userId: string, at: Date) {
-    this.failures.push({ userId, at });
+        return {
+          count: mine.length,
+          oldestAt: mine.length ? new Date(Math.min(...mine)) : null,
+        };
+      },
+      recordFailure: async (at: Date) => {
+        this.failures.push({ userId, at });
+      },
+    });
   }
 }
 
@@ -401,6 +413,12 @@ describe('AccountController (HTTP contract)', () => {
       expect(mine.status).toBe(200);
       expect(mine.body.owner).toBe(USER_A);
       expect(mine.headers['cache-control']).toBe('private, no-store');
+      expect(store.audits).toContainEqual({
+        userId: USER_A,
+        event: 'export_downloaded',
+        requestId: created.body.requestId,
+      });
+      expect(store.audits.filter((item) => item.event === 'export_downloaded')).toHaveLength(1);
 
       now = new Date('2026-11-17T09:59:59.000Z');
       expect((await call('get', path, USER_A)).status).toBe(200);
@@ -435,13 +453,28 @@ describe('AccountController (HTTP contract)', () => {
       expect(response.body.scheduledPurgeAt).toBe('2026-12-16T10:00:00.000Z');
     });
 
-    it('refuses a second request while one is pending', async () => {
-      await call('post', '/delete-request', USER_A, { password: PASSWORD });
+    it('keeps the first schedule when the request is repeated (no 409 exists for delete)', async () => {
+      const first = await call('post', '/delete-request', USER_A, { password: PASSWORD });
+
+      now = new Date('2026-11-20T10:00:00.000Z');
 
       const second = await call('post', '/delete-request', USER_A, { password: PASSWORD });
 
-      expect(second.status).toBe(409);
-      expect(second.body.code).toBe('REQUEST_ALREADY_PENDING');
+      expect(second.status).toBe(202);
+      expect(second.body.scheduledPurgeAt).toBe(first.body.scheduledPurgeAt);
+      expect(store.audits.filter((item) => item.event === 'deletion_requested')).toHaveLength(1);
+    });
+
+    it('records the audited events of the member', async () => {
+      await call('post', '/logout-all', USER_A);
+      await call('post', '/delete-request', USER_A, { password: PASSWORD });
+      await call('delete', '/delete-request', USER_A);
+
+      expect(store.audits.map((item) => item.event)).toEqual([
+        'logout_all',
+        'deletion_requested',
+        'deletion_cancelled',
+      ]);
     });
 
     it('cancels within the cooling-off and then finds nothing to cancel', async () => {
