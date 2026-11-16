@@ -83,7 +83,7 @@ async function rejection(promise: Promise<unknown>): Promise<string> {
 
 afterAll(async () => {
   await pool.end();
-});
+}, 30000);
 
 describe('shortlists service on the real database', () => {
   it('creates one default list, protects it, and enforces name rules', async () => {
@@ -116,6 +116,46 @@ describe('shortlists service on the real database', () => {
     expect(await rejection(service.rename(other.auth, first[0].id, 'Mine'))).toBe(
       'SHORTLIST_NOT_FOUND',
     );
+  }, 60000);
+
+  it('creates exactly one default list under parallel first reads (25 fresh users)', async () => {
+    for (let i = 0; i < 25; i += 1) {
+      const me = await seed('male');
+      const results = await Promise.all(
+        Array.from({ length: 10 }, () => service.list(me.auth)),
+      );
+      const ids = new Set(results.map((lists) => lists[0].id));
+      const rows = await pool.query(
+        `SELECT count(*)::int AS "n" FROM "ShortlistLists" WHERE "userId" = $1 AND "isDefault"`,
+        [me.userId],
+      );
+
+      expect(ids.size).toBe(1);
+      expect(rows.rows[0].n).toBe(1);
+    }
+  }, 120000);
+
+  it('allows exactly one of many parallel creates with the same name', async () => {
+    for (let i = 0; i < 20; i += 1) {
+      const me = await seed('male');
+      const outcomes = await Promise.all(
+        Array.from({ length: 8 }, () => rejection(service.create(me.auth, 'Same'))),
+      );
+
+      expect(outcomes.filter((o) => o === 'none')).toHaveLength(1);
+      expect(outcomes.filter((o) => o === 'SHORTLIST_NAME_TAKEN')).toHaveLength(7);
+      expect(await service.list(me.auth)).toHaveLength(2);
+    }
+  }, 120000);
+
+  it('creates every list for parallel creates with different names', async () => {
+    const me = await seed('male');
+    const outcomes = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => rejection(service.create(me.auth, `Name ${i}`))),
+    );
+
+    expect(outcomes.every((o) => o === 'none')).toBe(true);
+    expect(await service.list(me.auth)).toHaveLength(9);
   });
 
   it('adds idempotently, spans lists, omits hidden profiles, and deletes lists safely', async () => {
