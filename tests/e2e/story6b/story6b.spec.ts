@@ -400,6 +400,33 @@ test.describe('AC6 empty and error states', () => {
     await expect(resultCards(page).first()).toBeVisible();
   });
 
+  test('AC6 no results with NO filter active: the empty card still carries a Clear filters button', async ({ page }) => {
+    const m = await memberWithoutCandidates();
+    const searchUrls: string[] = [];
+    page.on('request', (r) => { if (r.url().includes('/discovery/search')) searchUrls.push(r.url()); });
+    await openAs(page, m, '/app');
+    const empty = page.getByTestId('results-empty');
+    await expect(empty.locator('p')).toHaveText(SENTENCES.resultsEmpty);
+    // No filter is active: nothing in the page URL, nothing in the form, no filter on the request.
+    expect(new URL(page.url()).search).toBe('');
+    for (const label of ['Marital status', 'Diet', 'Religion', 'Community', 'State', 'City']) {
+      await expect(page.getByLabel(label, { exact: true })).toHaveValue('');
+    }
+    expect(searchUrls.length).toBeGreaterThanOrEqual(1);
+    for (const u of searchUrls) {
+      for (const key of ['maritalStatus', 'religion', 'community', 'state', 'city', 'diet']) expect(new URL(u).searchParams.has(key), `${key} in ${u}`).toBe(false);
+    }
+    const clear = empty.getByRole('button', { name: 'Clear filters', exact: true });
+    await expect(clear).toHaveCount(1);
+    await expect(clear).toBeVisible();
+    await expect(clear).toBeEnabled();
+    await shot(page, 'ac6-empty-no-filter');
+    await clear.click();
+    await expect(page).toHaveURL(/\/app$/);
+    await expect(empty.locator('p')).toHaveText(SENTENCES.resultsEmpty);
+    await expect(empty.getByRole('button', { name: 'Clear filters', exact: true })).toBeVisible();
+  });
+
   test('AC6 failed first page (mocked 500): friendly sentence, Try again, form stays usable', async ({ page }) => {
     const { m, d } = await memberWithCandidates();
     await page.route(SEARCH, (route) => route.fulfill({
