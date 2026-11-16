@@ -173,6 +173,8 @@ const envSchema = z
   DAILY_RECOMMENDATIONS: optionalPositiveInt(9),
   INTEREST_RESEND_COOLDOWN_DAYS: optionalPositiveInt(30),
   INTEREST_DAILY_SEND_LIMIT: optionalLimit,
+  SHORTLIST_MAX_LISTS: optionalLimit,
+  SHORTLIST_MAX_PROFILES: optionalLimit,
   REVIEW_SLA_HOURS: optionalPositiveInt(48),
   REVIEW_BUSINESS_DAYS: isoWeekdays('1,2,3,4,5'),
   REVIEW_BUSINESS_START: clockMinutes('09:00'),
@@ -343,6 +345,14 @@ export const env = {
     return {
       resendCooldownDays: parsed.INTEREST_RESEND_COOLDOWN_DAYS,
       dailySendLimit: parsed.INTEREST_DAILY_SEND_LIMIT,
+    };
+  },
+  get shortlists() {
+    const parsed = loadEnv();
+
+    return {
+      maxLists: parsed.SHORTLIST_MAX_LISTS,
+      maxProfiles: parsed.SHORTLIST_MAX_PROFILES,
     };
   },
   get review() {

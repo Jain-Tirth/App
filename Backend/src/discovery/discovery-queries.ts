@@ -35,7 +35,7 @@ const VISIBLE_FROM = `"Users" u
  *
  * Parameters: $1 caller id, $2 male minimum age, $3 female minimum age.
  */
-const VISIBLE_WHERE = `u."role" = 'user'
+export const VISIBLE_WHERE =`u."role" = 'user'
   AND u."profileReviewStatus" = 'approved'
   AND u."accountStatus" = 'active'
   AND u."id" <> $1

@@ -9,6 +9,7 @@ import { DatabaseModule } from './database/database.module';
 import { InterestsModule } from './interests/interests.module';
 import { KycModule } from './kyc/kyc.module';
 import { ProfilesModule } from './profiles/profiles.module';
+import { ShortlistsModule } from './shortlists/shortlists.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { ProfilesModule } from './profiles/profiles.module';
     InterestsModule,
     KycModule,
     ProfilesModule,
+    ShortlistsModule,
   ],
   providers: [
     {

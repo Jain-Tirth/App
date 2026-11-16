@@ -18,6 +18,8 @@ tags:
     description: Member profile steps
   - name: Discovery
     description: Approved-only recommendations, search and profile detail
+  - name: Shortlists
+    description: Private named shortlists of approved profiles
 security:
   - bearerAuth: []
 paths:
@@ -1162,6 +1164,207 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  /shortlists:
+    get:
+      tags: [Shortlists]
+      summary: The caller's named shortlists (approved members only)
+      description: |
+        Private to the caller. The first call creates the default list
+        `Shortlisted` (`isDefault: true`); later calls return the same id.
+        Default list first, then by creation time.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The caller's lists
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Shortlist'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ProfileNotApproved'
+    post:
+      tags: [Shortlists]
+      summary: Create a shortlist
+      description: |
+        `name` is 1 to 100 characters after trim (400 `VALIDATION_ERROR` with a
+        field-level error on `name` otherwise). A duplicate name for the same
+        member, case-insensitively, is 409 `SHORTLIST_NAME_TAKEN`. There is no
+        default list-count limit. `userId` and `isDefault` in the body are 400.
+        409 `SHORTLIST_LIMIT_EXCEEDED` exists only when `SHORTLIST_MAX_LISTS`
+        is configured (configuration-dependent; unset means unlimited).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShortlistNameRequest'
+      responses:
+        '201':
+          description: List created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Shortlist'
+        '400':
+          $ref: '#/components/responses/ShortlistBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ProfileNotApproved'
+        '409':
+          $ref: '#/components/responses/ShortlistConflict'
+  /shortlists/{id}:
+    patch:
+      tags: [Shortlists]
+      summary: Rename a shortlist
+      description: |
+        Another member's list id is 404 `SHORTLIST_NOT_FOUND` (never 403). The
+        default list cannot be renamed: 409 `DEFAULT_SHORTLIST_PROTECTED`.
+        Same name rules as create.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ShortlistId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShortlistNameRequest'
+      responses:
+        '200':
+          description: List renamed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Shortlist'
+        '400':
+          $ref: '#/components/responses/ShortlistBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ProfileNotApproved'
+        '404':
+          $ref: '#/components/responses/ShortlistNotFound'
+        '409':
+          $ref: '#/components/responses/ShortlistConflict'
+    delete:
+      tags: [Shortlists]
+      summary: Delete a shortlist
+      description: |
+        Removes the list and its memberships only; the profiles and their
+        presence in the caller's other lists are untouched. The default list is
+        409 `DEFAULT_SHORTLIST_PROTECTED`. Another member's list is 404
+        `SHORTLIST_NOT_FOUND`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ShortlistId'
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ProfileNotApproved'
+        '404':
+          $ref: '#/components/responses/ShortlistNotFound'
+        '409':
+          $ref: '#/components/responses/ShortlistConflict'
+  /shortlists/{id}/profiles:
+    get:
+      tags: [Shortlists]
+      summary: Profiles in a shortlist (story 6 cards, cursor pagination)
+      description: |
+        Cards only, newest addition first. A profile that is no longer approved
+        or visible to the caller is omitted; its membership row is kept. Default
+        page size 20, maximum 50.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ShortlistId'
+        - $ref: '#/components/parameters/InterestLimit'
+        - $ref: '#/components/parameters/InterestCursor'
+      responses:
+        '200':
+          description: One page of cards
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShortlistProfilePage'
+        '400':
+          $ref: '#/components/responses/ShortlistBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ProfileNotApproved'
+        '404':
+          $ref: '#/components/responses/ShortlistNotFound'
+  /shortlists/{id}/profiles/{profileRef}:
+    put:
+      tags: [Shortlists]
+      summary: Add a profile to a shortlist
+      description: |
+        Idempotent: adding the same profile twice is 200 with one membership.
+        A profile may be in several lists. An unknown, malformed, non-approved
+        or hidden profile is 404 `PROFILE_NOT_FOUND`; the caller's own is 400
+        `CANNOT_SHORTLIST_SELF`. The shortlisted member is never notified.
+        409 `SHORTLIST_LIMIT_EXCEEDED` exists only when `SHORTLIST_MAX_PROFILES`
+        is configured (configuration-dependent; unset means unlimited).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ShortlistId'
+        - $ref: '#/components/parameters/ShortlistProfileRef'
+      responses:
+        '200':
+          description: The profile is in the list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [added]
+                properties:
+                  added: { type: boolean, enum: [true] }
+        '400':
+          $ref: '#/components/responses/ShortlistBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ProfileNotApproved'
+        '404':
+          description: '`SHORTLIST_NOT_FOUND` or `PROFILE_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          $ref: '#/components/responses/ShortlistConflict'
+    delete:
+      tags: [Shortlists]
+      summary: Remove a profile from a shortlist
+      description: 'Idempotent, so it is 204 whether or not the profile was in the list. Another member''s list is 404 `SHORTLIST_NOT_FOUND`.'
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ShortlistId'
+        - $ref: '#/components/parameters/ShortlistProfileRef'
+      responses:
+        '204':
+          description: Removed (or was not present)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ProfileNotApproved'
+        '404':
+          $ref: '#/components/responses/ShortlistNotFound'
 components:
   securitySchemes:
     bearerAuth:
@@ -1174,6 +1377,20 @@ components:
       bearerFormat: JWT
       description: Token from POST /admin/login (admin secret)
   parameters:
+    ShortlistId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ShortlistProfileRef:
+      name: profileRef
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{32}$'
     InterestId:
       name: id
       in: path
@@ -1212,6 +1429,24 @@ components:
         type: string
         format: uuid
   responses:
+    ShortlistBadRequest:
+      description: '`VALIDATION_ERROR` (field-level on `name`, unknown field such as `userId` or `isDefault`, `limit` out of 1..50), `INVALID_CURSOR` or `CANNOT_SHORTLIST_SELF`'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ShortlistNotFound:
+      description: '`SHORTLIST_NOT_FOUND` (also for another member''s list)'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ShortlistConflict:
+      description: '`SHORTLIST_NAME_TAKEN`, `DEFAULT_SHORTLIST_PROTECTED`, or `SHORTLIST_LIMIT_EXCEEDED` (configuration-dependent: only when `SHORTLIST_MAX_LISTS` or `SHORTLIST_MAX_PROFILES` is set)'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     InterestPage:
       description: One page of interests
       content:
@@ -1776,6 +2011,40 @@ components:
           type: string
           enum: [member-appeal, admin-error, goodwill, other]
         notes: { type: string, maxLength: 500 }
+    Shortlist:
+      type: object
+      required: [id, name, isDefault, profileCount, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        isDefault:
+          type: boolean
+          description: True for the one list named `Shortlisted`; it cannot be renamed or deleted.
+        profileCount:
+          type: integer
+          description: Stored memberships, including profiles that are currently not visible.
+        createdAt: { type: string, format: date-time }
+    ShortlistNameRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 1 to 100 characters after trim. Unique per member, case-insensitively.
+    ShortlistProfilePage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryCard'
+        nextCursor:
+          type: [string, 'null']
+          description: Null on the last page.
     ErrorEnvelope:
       type: object
       required: [code, message, details, requestId]
