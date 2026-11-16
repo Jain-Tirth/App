@@ -365,12 +365,39 @@ test.describe('AC5 no profile-ID search', () => {
     }
   });
 
-  test('AC5 profileUid appears in NO member-facing response at all (includes GET /profiles/me)', async ({ page }) => {
+  // AC5 as amended on 2026-11-16: the member's own GET /profiles/me may return profileUid; it must not be rendered.
+  // Every other response stays forbidden, and no request may carry a profileUid query parameter.
+  test('AC5 profileUid is in no response except the member\'s own GET /profiles/me, is never rendered and is no query parameter', async ({ page }) => {
     const { m, d } = await memberWithCandidates();
-    const { bodies } = await tour(page, m, d);
-    const leaking = bodies.filter((b) => /profileUid/i.test(b.text)).map((b) => new URL(b.url).pathname);
-    console.log(`AC5 responses carrying "profileUid": ${JSON.stringify([...new Set(leaking)])}`);
-    expect([...new Set(leaking)]).toEqual([]);
+    const own = await ownProfileUid(m.userId);
+    expect(own, 'the member has a profileUid of their own').toBeTruthy();
+    const { urls, bodies, doms } = await tour(page, m, d);
+    const leaking = [...new Set(bodies.filter((b) => /profileUid/i.test(b.text)).map((b) => new URL(b.url).pathname))];
+    console.log(`AC5 responses carrying "profileUid": ${JSON.stringify(leaking)}`);
+    for (const path of leaking) expect(path).toBe('/api/v1/profiles/me');
+    // No response of any kind, /profiles/me included, carries another member's profileUid.
+    const others = d.all.map((s) => s.profileUid);
+    for (const b of bodies) for (const v of others) expect(b.text, b.url).not.toContain(v);
+    // No discovery or profile-detail response carries the key or the member's own value.
+    const discovery = bodies.filter((b) => /\/discovery\/|\/profiles\/[0-9a-f]{32}/.test(b.url));
+    expect(discovery.length).toBeGreaterThanOrEqual(4);
+    for (const b of discovery) {
+      expect(b.text, b.url).not.toMatch(/profileUid/i);
+      expect(b.text, b.url).not.toContain(own as string);
+    }
+    // The member's own profileUid is never rendered, on any screen of the tour (My Profile tab included).
+    expect(doms.length).toBeGreaterThanOrEqual(4);
+    for (const dom of doms) {
+      expect(dom).not.toMatch(/profileUid/i);
+      expect(dom).not.toContain(own as string);
+    }
+    // No request carries a profileUid query parameter (any spelling), nor the value anywhere in its URL.
+    for (const u of urls) {
+      const keys = [...new URL(u).searchParams.keys()].map((k) => k.toLowerCase());
+      expect(keys, u).not.toContain('profileuid');
+      expect(u).not.toMatch(/profileUid/i);
+      expect(u).not.toContain(own as string);
+    }
   });
 
   test('AC5 edge: typing a real profile UID into a filter finds nobody', async ({ page }) => {
@@ -515,9 +542,9 @@ test.describe('AC7 card content', () => {
     expect(text).not.toMatch(/null|undefined|NaN/);
   });
 
-  // Expected to FAIL on this build: the handoff says cards always render the placeholder because no member endpoint
-  // turns photoRef into an image URL. AC7 lists "the primary photo" among the card fields.
-  test('AC7 primary photo: a card whose response carries a photoRef shows the photo', async ({ page }) => {
+  // AC7 as amended on 2026-11-16: there is no member photo-delivery endpoint yet, so the named placeholder stands in
+  // for the primary photo on every card and on the detail page, even when the response carries a photoRef.
+  test('AC7 primary photo: a card and a detail page whose response carries a photoRef show the named placeholder, never another image', async ({ page }) => {
     const { m, d } = await memberWithCandidates();
     const resp = page.waitForResponse((r) => r.url().includes('/discovery/search'));
     await openAs(page, m, `/app?city=${d.tag}`);
@@ -526,7 +553,23 @@ test.describe('AC7 card content', () => {
     await expect(resultCards(page)).toHaveCount(20);
     const card = resultCards(page).nth(0);
     console.log(`AC7 photo card accessible images: ${JSON.stringify(await card.getByRole('img').evaluateAll((els) => els.map((e) => `${e.tagName}:${e.getAttribute('aria-label') ?? e.getAttribute('alt')}`)))}`);
-    await expect(card.locator('img')).toHaveCount(1);
+    await expect(card.getByRole('img')).toHaveCount(1);
+    await expect(card.getByRole('img', { name: 'Photo of Asha is being prepared', exact: true })).toBeVisible();
+    await expect(card.locator('img, picture, svg image, [style*="background-image"]')).toHaveCount(0);
+    await expect(page.getByTestId('results-list').locator('img, picture, [style*="background-image"]')).toHaveCount(0);
+    await expect(page.getByTestId('recommendations-list').locator('img, picture, [style*="background-image"]')).toHaveCount(0);
+    expect(await page.content()).not.toContain(first.photoRef); // the reference is not turned into any URL or attribute
+    await contactAudit(card, d, m);
+
+    const detailResp = page.waitForResponse((r) => r.url().endsWith(`/profiles/${d.page[0].profileRef}`));
+    await card.locator('a').click();
+    expect((await (await detailResp).json()).photoRef).toBe(d.page[0].photoId);
+    const detail = page.getByTestId('profile-detail');
+    await expect(detail).toBeVisible();
+    await expect(detail.getByRole('img', { name: 'Photo of Asha is being prepared', exact: true })).toBeVisible();
+    await expect(detail.locator('img, picture, svg image, [style*="background-image"]')).toHaveCount(0);
+    expect(await page.content()).not.toContain(first.photoRef);
+    await contactAudit(detail, d, m);
   });
 });
 
