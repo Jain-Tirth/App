@@ -906,6 +906,136 @@ test.describe('AC13 keyboard and axe', () => {
   });
 });
 
+// ------------------------------------------------------------------ iteration 2 (round 1 verdict follow-ups)
+test.describe('Iteration 2 follow-ups', () => {
+  test('AC1/AC13 Escape closes the drawer after a tick AND an untick (focus kept, checkbox aria-disabled while busy)', async ({ page }) => {
+    const { v, city } = await boot();
+    await apiLists(v);
+    await signIn(page, v);
+    await openCards(page, city);
+    await openDrawer(page);
+    const cb = drawer(page).getByRole('checkbox', { name: 'Shortlisted' });
+    await cb.click();
+    await expect(cb).toBeChecked();
+    await expect(cb).not.toHaveAttribute('aria-disabled', 'true');
+    await cb.click();
+    await expect(cb).not.toBeChecked();
+    await expect(cb).not.toHaveAttribute('aria-disabled', 'true');
+    expect(await page.evaluate(() => !!document.activeElement?.closest('[data-testid="shortlist-drawer"]'))).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(drawer(page)).toHaveCount(0);
+  });
+
+  test('AC2 in-flight checkbox: aria-disabled exposed, repeated click and Space send exactly one request, Escape still works while busy (delay-only route)', async ({ page }) => {
+    const { v, city } = await boot();
+    await apiLists(v);
+    await signIn(page, v);
+    await openCards(page, city);
+    await openDrawer(page);
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => { release = r; });
+    const reqs: string[] = [];
+    await page.route('**/shortlists/*/profiles/*', async (route) => {
+      reqs.push(route.request().method());
+      if (route.request().method() === 'PUT') await held;
+      await route.continue();
+    });
+    const cb = drawer(page).getByRole('checkbox', { name: 'Shortlisted' });
+    await cb.click();
+    await expect(cb).toHaveAttribute('aria-disabled', 'true');
+    await expect(cb).toBeDisabled();
+    // screen reader state: the accessibility tree reports it as disabled
+    await expect(page.getByRole('checkbox', { name: 'Shortlisted', disabled: true })).toHaveCount(1);
+    await cb.click({ force: true });
+    await cb.click({ force: true });
+    await cb.focus();
+    await page.keyboard.press('Space');
+    await page.keyboard.press('Space');
+    expect(reqs).toEqual(['PUT']);
+    release();
+    await expect(cb).toBeChecked();
+    await expect(cb).toBeEnabled();
+    expect(reqs).toEqual(['PUT']);
+    expect(await apiMembers(v, (await apiLists(v))[0].id)).toHaveLength(1);
+    // untick: also exactly one DELETE despite repeated clicks (re-hold not needed; clicks land after completion are real toggles, so only one click here)
+    await cb.click();
+    await expect(cb).not.toBeChecked();
+    expect(reqs).toEqual(['PUT', 'DELETE']);
+  });
+
+  test('AC1 membership walk concurrency: 26 lists, at most 4 parallel GET /shortlists/:id/profiles (peak read from in-flight log; delay-only route)', async ({ page }) => {
+    const { v, city } = await boot();
+    await apiLists(v);
+    for (let i = 0; i < 25; i++) await apiCreate(v, `Walk ${i}`);
+    await signIn(page, v);
+    await openCards(page, city);
+    let inflight = 0;
+    let peak = 0;
+    let total = 0;
+    await page.route(/\/shortlists\/[^/]+\/profiles(\?.*)?$/, async (route) => {
+      if (route.request().method() !== 'GET') { await route.continue(); return; }
+      inflight++; total++; peak = Math.max(peak, inflight);
+      try {
+        await new Promise((r) => setTimeout(r, 120)); // simulated latency so overlap is observable
+        await route.continue();
+      } finally { inflight--; }
+    });
+    await cards(page).getByTestId('shortlist-button').click();
+    await expect(drawer(page)).toBeVisible();
+    await expect(page.getByTestId('shortlist-drawer-loading')).toHaveCount(0, { timeout: 30_000 });
+    await expect(drawer(page).getByRole('checkbox')).toHaveCount(26);
+    console.log('WALK concurrency', JSON.stringify({ total, peak }));
+    expect(total).toBeGreaterThanOrEqual(26);
+    expect(peak).toBeGreaterThan(1);
+    // The dev server runs React.StrictMode (main.tsx), which mounts the drawer effect twice, so two walks of 26 lists
+    // overlap (total 52). The limit is 4 per walk, so the peak must stay within 4 x number of walks.
+    const walks = Math.ceil(total / 26);
+    expect(peak).toBeLessThanOrEqual(4 * walks);
+  });
+
+  test('Logout clears the shortlist cache: second member in the same browser context sees none of the first member\'s lists or ticks', async ({ page }) => {
+    const { v, city, t } = await boot();
+    const [def] = await apiLists(v);
+    await apiCreate(v, 'FirstMemberOnly');
+    await apiAdd(v, def.id, t.profileRef);
+    const v2 = await viewer();
+    await page.addInitScript(
+      ([a, r]) => {
+        if (!sessionStorage.getItem('seeded1')) {
+          sessionStorage.setItem('seeded1', '1');
+          localStorage.setItem('user_access_token', a);
+          localStorage.setItem('user_refresh_token', r);
+        }
+      },
+      [v.token, v.refresh],
+    );
+    await openCards(page, city);
+    await openDrawer(page);
+    await expect(drawer(page).getByRole('checkbox', { name: 'Shortlisted' })).toBeChecked();
+    await expect(drawer(page).getByRole('checkbox', { name: 'FirstMemberOnly' })).toBeVisible();
+    await drawer(page).getByRole('button', { name: 'Close' }).click();
+    await page.getByRole('button', { name: 'Sign out' }).click();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('user_access_token'))).toBeNull();
+    // sign in as the second member through the login form, with no page reload, so module state (the cache) survives
+    await expect(page).toHaveURL(/\/login$/);
+    await page.getByTestId('login-email').fill(v2.email);
+    await page.getByTestId('login-password').fill(v2.password);
+    const log = track(page);
+    await page.getByTestId('login-submit').click();
+    await expect(page.getByTestId('results-list').getByTestId('profile-card').first()).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId('results-list').getByTestId('profile-card').first().getByTestId('shortlist-button').click();
+    await expect(drawer(page)).toBeVisible();
+    await expect(page.getByTestId('shortlist-drawer-loading')).toHaveCount(0);
+    await expect(drawer(page).getByRole('checkbox', { name: 'FirstMemberOnly' })).toHaveCount(0);
+    await expect(drawer(page).getByRole('checkbox', { name: 'Shortlisted' })).not.toBeChecked();
+    await expect(drawer(page).getByRole('checkbox')).toHaveCount(1);
+    const v2Default = (await apiLists(v2))[0];
+    // the second member's own default list was walked from the server (cache was empty for it)
+    expect(log.some((e) => e.method === 'GET' && e.path.includes(`/shortlists/${v2Default.id}/profiles`))).toBe(true);
+    expect(log.some((e) => e.path.includes(def.id))).toBe(false);
+  });
+});
+
 test('Network: no request leaves the allowed origins', async ({ page }) => {
   const { v, city } = await boot();
   await signIn(page, v);
