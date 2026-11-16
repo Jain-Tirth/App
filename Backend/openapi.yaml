@@ -20,6 +20,8 @@ tags:
     description: Approved-only recommendations, search and profile detail
   - name: Shortlists
     description: Private named shortlists of approved profiles
+  - name: Account
+    description: Account settings, logout everywhere, data export and account deletion
 security:
   - bearerAuth: []
 paths:
@@ -1365,6 +1367,245 @@ paths:
           $ref: '#/components/responses/ProfileNotApproved'
         '404':
           $ref: '#/components/responses/ShortlistNotFound'
+  /account/settings:
+    get:
+      tags: [Account]
+      summary: Read the member's own settings
+      description: The member is taken from the access token; there is no id parameter.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountSettings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AccountDeletionPending'
+    patch:
+      tags: [Account]
+      summary: Update the member's own settings
+      description: |
+        Accepts only `language`, `notifications` and `profileVisibility`. Any
+        other key (`role`, `accountStatus`, ...) or a value outside the allowed
+        set (`language: fr`) is 400 `VALIDATION_ERROR` with field-level
+        `details.issues`. `notifications` is merged: keys not sent keep their
+        value.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountSettingsPatch'
+      responses:
+        '200':
+          description: The settings after the change
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountSettings'
+        '400':
+          description: '`VALIDATION_ERROR` with field-level `details.issues`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AccountDeletionPending'
+  /account/logout-all:
+    post:
+      tags: [Account]
+      summary: End every session of the member
+      description: |
+        Revokes every refresh token and bumps the member's session version, so
+        access tokens held by other devices (and the caller's own) are refused
+        on their next request with 401. Other members are not affected.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Every session ended
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AccountDeletionPending'
+  /account/export-request:
+    post:
+      tags: [Account]
+      summary: Request an export of the member's data
+      description: |
+        Step-up: the body carries the member's password. A wrong password is 403
+        `STEP_UP_FAILED` and creates nothing. After 5 failed attempts in 15
+        minutes the next one is 429 `RATE_LIMITED` with `Retry-After`. While an
+        unexpired pending request exists a new one is 409
+        `REQUEST_ALREADY_PENDING`. The archive is fetched from `downloadPath`
+        for 24 hours; no email or SMS is sent.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepUpRequest'
+      responses:
+        '202':
+          description: Export requested
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportRequestAccepted'
+        '400':
+          description: '`VALIDATION_ERROR` (missing `password`, unknown field)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: '`STEP_UP_FAILED` (wrong password) or `ACCOUNT_DELETION_PENDING`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          $ref: '#/components/responses/RequestAlreadyPending'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /account/export/{requestId}:
+    get:
+      tags: [Account]
+      summary: Download the member's own export archive
+      description: |
+        Served only to the member who made the request: another member's token
+        gets 404 `EXPORT_NOT_FOUND`. The link is valid for 24 hours; after that
+        it is 410 `EXPORT_EXPIRED`. The archive holds the member's profile,
+        settings, verification status, photo metadata, consents, interests sent
+        and received and shortlists. It never holds a password hash, a refresh
+        token, a full ID number or another member's contact details.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: 'The archive, sent with `Cache-Control: private, no-store`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportArchive'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: '`EXPORT_NOT_FOUND` (unknown, malformed or another member''s request)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '410':
+          description: '`EXPORT_EXPIRED`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /account/delete-request:
+    post:
+      tags: [Account]
+      summary: Request deletion of the account
+      description: |
+        Step-up: the body carries the member's password (errors as for the
+        export request). The account is purged after the cooling-off
+        (`ACCOUNT_DELETION_COOLING_OFF_DAYS`, default 30). From now until it is
+        cancelled the member is hidden from discovery, search, profile detail,
+        shortlists and interest lists and cannot be sent interests; they can
+        still log in, but every route except cancel and logout is 403
+        `ACCOUNT_DELETION_PENDING` (`details.scheduledPurgeAt`). Only the member
+        can request or cancel; no admin endpoint exists. Data is not shared
+        with third parties.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepUpRequest'
+      responses:
+        '202':
+          description: Deletion scheduled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteRequestAccepted'
+        '400':
+          description: '`VALIDATION_ERROR` (missing `password`, unknown field)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: '`STEP_UP_FAILED` (wrong password)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          $ref: '#/components/responses/RequestAlreadyPending'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    delete:
+      tags: [Account]
+      summary: Cancel the pending account deletion
+      description: |
+        Within the cooling-off this restores the account fully (200). After
+        `scheduledPurgeAt` it is 410 `ACCOUNT_PURGED`. With no pending request
+        it is 404 `DELETE_REQUEST_NOT_FOUND`.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Deletion cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: '`DELETE_REQUEST_NOT_FOUND`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '410':
+          description: '`ACCOUNT_PURGED`: the cooling-off has ended'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
 components:
   securitySchemes:
     bearerAuth:
@@ -1429,6 +1670,27 @@ components:
         type: string
         format: uuid
   responses:
+    AccountDeletionPending:
+      description: '`ACCOUNT_DELETION_PENDING`: the account is scheduled for deletion; `details.scheduledPurgeAt` says when'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    RequestAlreadyPending:
+      description: '`REQUEST_ALREADY_PENDING`'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    RateLimited:
+      description: '`RATE_LIMITED`: 5 failed step-up attempts in 15 minutes; `Retry-After` gives the seconds to wait'
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     ShortlistBadRequest:
       description: '`VALIDATION_ERROR` (field-level on `name`, unknown field such as `userId` or `isDefault`, `limit` out of 1..50), `INVALID_CURSOR` or `CANNOT_SHORTLIST_SELF`'
       content:
@@ -2045,6 +2307,90 @@ components:
         nextCursor:
           type: [string, 'null']
           description: Null on the last page.
+    AccountSettings:
+      type: object
+      required: [language, notifications, profileVisibility]
+      properties:
+        language:
+          type: string
+          enum: [en, hi, gu]
+        notifications:
+          $ref: '#/components/schemas/NotificationPrefs'
+        profileVisibility:
+          type: string
+          enum: [all, hidden]
+    NotificationPrefs:
+      type: object
+      description: In-app notification switches.
+      properties:
+        interestReceived: { type: boolean }
+        interestAccepted: { type: boolean }
+        profileApproved: { type: boolean }
+        newMessage: { type: boolean }
+        profileViewed: { type: boolean }
+      additionalProperties: false
+    AccountSettingsPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        language:
+          type: string
+          enum: [en, hi, gu]
+        notifications:
+          $ref: '#/components/schemas/NotificationPrefs'
+        profileVisibility:
+          type: string
+          enum: [all, hidden]
+    StepUpRequest:
+      type: object
+      required: [password]
+      additionalProperties: false
+      properties:
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The member's current password, re-verified for this action.
+    ExportRequestAccepted:
+      type: object
+      required: [requestId, status, expiresAt, downloadPath]
+      properties:
+        requestId: { type: string, format: uuid }
+        status: { type: string, enum: [pending] }
+        expiresAt: { type: string, format: date-time, description: 24 hours after the request }
+        downloadPath: { type: string, example: /api/v1/account/export/00000000-0000-0000-0000-000000000000 }
+    DeleteRequestAccepted:
+      type: object
+      required: [status, requestedAt, scheduledPurgeAt]
+      properties:
+        status: { type: string, enum: [pending] }
+        requestedAt: { type: string, format: date-time }
+        scheduledPurgeAt:
+          type: string
+          format: date-time
+          description: Request time plus the configured cooling-off (30 days by default).
+    ExportArchive:
+      type: object
+      required: [format, version, exportedAt, account, settings, verification, photos, consents, interests, shortlists]
+      properties:
+        format: { type: string, enum: [dhobi-matrimony-export] }
+        version: { type: integer }
+        exportedAt: { type: string, format: date-time }
+        account: { type: object, description: The member's own account and profile sections. }
+        settings:
+          $ref: '#/components/schemas/AccountSettings'
+        verification:
+          type: [object, 'null']
+          description: Status, document type and last 4 characters of the ID number only.
+        photos: { type: array, items: { type: object } }
+        consents: { type: array, items: { type: object } }
+        interests:
+          type: object
+          required: [sent, received]
+          properties:
+            sent: { type: array, items: { type: object } }
+            received: { type: array, items: { type: object } }
+        shortlists: { type: array, items: { type: object } }
     ErrorEnvelope:
       type: object
       required: [code, message, details, requestId]

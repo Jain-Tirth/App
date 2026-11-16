@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
-import { CARD_COLUMNS, CARD_JOINS } from '../discovery/discovery-queries';
+import {
+  CARD_COLUMNS,
+  CARD_JOINS,
+  NOT_PENDING_DELETION,
+} from '../discovery/discovery-queries';
 import type { DiscoveryCard } from '../discovery/discovery.types';
 import type {
   ClearCooldownInput,
@@ -165,6 +169,7 @@ export class PostgresInterestsRepository implements InterestRepository {
       `u."role" = 'user'`,
       `u."profileReviewStatus" = 'approved'`,
       `u."accountStatus" = 'active'`,
+      NOT_PENDING_DELETION,
     ];
 
     if (criteria.status) {

@@ -175,6 +175,10 @@ const envSchema = z
   INTEREST_DAILY_SEND_LIMIT: optionalLimit,
   SHORTLIST_MAX_LISTS: optionalLimit,
   SHORTLIST_MAX_PROFILES: optionalLimit,
+  ACCOUNT_DELETION_COOLING_OFF_DAYS: optionalPositiveInt(30),
+  ACCOUNT_EXPORT_LINK_HOURS: optionalPositiveInt(24),
+  ACCOUNT_STEP_UP_MAX_FAILURES: optionalPositiveInt(5),
+  ACCOUNT_STEP_UP_WINDOW_MINUTES: optionalPositiveInt(15),
   REVIEW_SLA_HOURS: optionalPositiveInt(48),
   REVIEW_BUSINESS_DAYS: isoWeekdays('1,2,3,4,5'),
   REVIEW_BUSINESS_START: clockMinutes('09:00'),
@@ -353,6 +357,16 @@ export const env = {
     return {
       maxLists: parsed.SHORTLIST_MAX_LISTS,
       maxProfiles: parsed.SHORTLIST_MAX_PROFILES,
+    };
+  },
+  get account() {
+    const parsed = loadEnv();
+
+    return {
+      deletionCoolingOffDays: parsed.ACCOUNT_DELETION_COOLING_OFF_DAYS,
+      exportLinkHours: parsed.ACCOUNT_EXPORT_LINK_HOURS,
+      stepUpMaxFailures: parsed.ACCOUNT_STEP_UP_MAX_FAILURES,
+      stepUpWindowMinutes: parsed.ACCOUNT_STEP_UP_WINDOW_MINUTES,
     };
   },
   get review() {

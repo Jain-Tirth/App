@@ -12,7 +12,7 @@ import type { ClientRequestContext } from '../common/request-context';
 import { env } from '../config/env';
 import { ConsentsService } from '../consents/consents.service';
 import { DatabaseService } from '../database/database.service';
-import { AuthTokens, AuthUserResponse, AuthenticatedUser, Role, AccountStatus, ProfileCreatedBy, Gender } from './auth.types';
+import { AuthTokenPayload, AuthTokens, AuthUserResponse, AuthenticatedUser, Role, AccountStatus, ProfileCreatedBy, Gender } from './auth.types';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -298,6 +298,12 @@ export class AuthService {
       throw new UnauthorizedException('User no longer exists.');
     }
 
+    // A refresh token issued before logout-all is refused even if a session
+    // row was written for it afterwards.
+    if ((payload.sv ?? 0) !== (await this.currentSessionVersion(user.id))) {
+      throw new UnauthorizedException('Refresh token has been revoked.');
+    }
+
     const tokens = await this.generateTokens(user);
     const refreshTokenHash = await bcrypt.hash(
       tokens.refreshToken,
@@ -325,10 +331,11 @@ export class AuthService {
   }
 
   private async generateTokens(user: { id: string; email: string; role?: Role }): Promise<AuthTokens> {
-    const payload = {
+    const payload: AuthTokenPayload = {
       sub: user.id,
       email: user.email,
       role: user.role ?? 'user',
+      sv: await this.currentSessionVersion(user.id),
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -343,6 +350,16 @@ export class AuthService {
     ]);
 
     return { accessToken, refreshToken };
+  }
+
+  /** The value logout-all bumps; tokens issued now carry it. */
+  private async currentSessionVersion(userId: string): Promise<number> {
+    const result = await this.db.query<{ sessionVersion: number }>(
+      `SELECT "sessionVersion" FROM "Users" WHERE "id" = $1`,
+      [userId],
+    );
+
+    return result.rows[0]?.sessionVersion ?? 0;
   }
 
   private getRefreshTokenExpiryDate(): Date {

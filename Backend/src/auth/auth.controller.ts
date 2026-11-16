@@ -2,6 +2,7 @@ import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { getClientRequestContext } from '../common/request-context';
 import { AuthService } from './auth.service';
+import { AllowWhileDeletionPending } from './decorators/allow-while-deletion-pending.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -43,6 +44,7 @@ export class AuthController {
     return this.authService.refreshTokens(refreshTokenDto);
   }
 
+  @AllowWhileDeletionPending()
   @UseGuards(JwtAuthGuard)
   @Post('logout')
   logout(@CurrentUser() user: AuthenticatedUser) {

@@ -29,6 +29,9 @@ const VISIBLE_FROM = `"Users" u
   JOIN "Profiles" p ON p."userId" = u."id"
   JOIN "ProfilePersonal" pp ON pp."profileId" = p."id"`;
 
+/** A member who asked to delete their account is hidden everywhere (story 9). */
+export const NOT_PENDING_DELETION = `u."deletionRequestedAt" IS NULL`;
+
 /**
  * The hard filters. They decide who may be seen at all and run in the
  * database, never in the client or after the query.
@@ -38,6 +41,7 @@ const VISIBLE_FROM = `"Users" u
 export const VISIBLE_WHERE =`u."role" = 'user'
   AND u."profileReviewStatus" = 'approved'
   AND u."accountStatus" = 'active'
+  AND ${NOT_PENDING_DELETION}
   AND u."id" <> $1
   AND u."gender" <> (SELECT c."gender" FROM "Users" c WHERE c."id" = $1)
   AND NOT EXISTS (

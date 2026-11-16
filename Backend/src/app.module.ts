@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { AccountModule } from './account/account.module';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { ApiExceptionFilter } from './common/api-exception.filter';
@@ -13,6 +14,7 @@ import { ShortlistsModule } from './shortlists/shortlists.module';
 
 @Module({
   imports: [
+    AccountModule,
     AdminModule,
     AuthModule,
     ConsentsModule,
