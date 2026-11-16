@@ -1,8 +1,10 @@
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { BadgeCheck, Briefcase, MapPin, Sparkles, UserRound } from 'lucide-react';
 import type { DiscoveryCard } from '../types';
 import { displayValue, formatAge } from '../lib/discovery';
 import { SendInterestButton } from './SendInterestButton';
+import { ShortlistButton } from './ShortlistButton';
 
 /** Stand-in for a missing photo. Always carries an alt text; never shows another image. */
 export function PhotoPlaceholder({ firstName, hasPhoto }: { firstName: string; hasPhoto: boolean }) {
@@ -37,10 +39,12 @@ interface ProfileCardProps {
   /** With a token the card carries the Send interest button (kept outside the link). */
   token?: string;
   onLogout?: () => void;
+  /** Extra actions under the card (kept outside the link). */
+  children?: ReactNode;
 }
 
 /** Shows only the story 6 card fields. Links use profileRef and nothing else. */
-export function ProfileCard({ card, backSearch, token, onLogout }: ProfileCardProps) {
+export function ProfileCard({ card, backSearch, token, onLogout, children }: ProfileCardProps) {
   const age = formatAge(card.age);
   return (
     <li className="flex min-w-0 list-none flex-col gap-3" data-testid="profile-card">
@@ -77,12 +81,16 @@ export function ProfileCard({ card, backSearch, token, onLogout }: ProfileCardPr
         </div>
       </Link>
       {token && onLogout ? (
-        <SendInterestButton
-          token={token}
-          receiverProfileRef={card.profileRef}
-          onLogout={onLogout}
-        />
+        <div className="flex flex-wrap items-start gap-2">
+          <SendInterestButton
+            token={token}
+            receiverProfileRef={card.profileRef}
+            onLogout={onLogout}
+          />
+          <ShortlistButton token={token} profileRef={card.profileRef} onLogout={onLogout} />
+        </div>
       ) : null}
+      {children}
     </li>
   );
 }

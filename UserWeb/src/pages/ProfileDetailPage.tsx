@@ -6,6 +6,7 @@ import { hasErrorCode } from '../apiError';
 import { ErrorNotice } from '../components/ErrorNotice';
 import { PhotoPlaceholder, VerifiedBadge } from '../components/DiscoveryCards';
 import { SendInterestButton } from '../components/SendInterestButton';
+import { ShortlistButton } from '../components/ShortlistButton';
 import { Button } from '../components/ui/button';
 import { describeCode, describeError, type FriendlyError } from '../errors/messages';
 import {
@@ -157,10 +158,16 @@ export function ProfileDetailPage({ token, onLogout }: ProfileDetailPageProps) {
                 <p className="text-sm text-brand-muted">{formatAge(detail.age)}</p>
                 {detail.verified ? <VerifiedBadge /> : null}
               </div>
-              <div className="max-w-full">
+              <div className="flex max-w-full flex-wrap items-start gap-2">
                 <SendInterestButton
                   token={token}
                   receiverProfileRef={detail.profileRef}
+                  onLogout={onLogout}
+                  size="default"
+                />
+                <ShortlistButton
+                  token={token}
+                  profileRef={detail.profileRef}
                   onLogout={onLogout}
                   size="default"
                 />

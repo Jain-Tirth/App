@@ -7,6 +7,8 @@ interface ConfirmDialogProps {
   /** The question, also the dialog's accessible name. */
   title: string;
   confirmLabel: string;
+  /** Label of the dismiss button. Defaults to "Cancel". */
+  cancelLabel?: string;
   busyLabel: string;
   busy: boolean;
   error: FriendlyError | null;
@@ -21,6 +23,7 @@ interface ConfirmDialogProps {
 export function ConfirmDialog({
   title,
   confirmLabel,
+  cancelLabel = 'Cancel',
   busyLabel,
   busy,
   error,
@@ -80,7 +83,7 @@ export function ConfirmDialog({
             disabled={busy}
             onClick={onClose}
           >
-            Cancel
+            {cancelLabel}
           </Button>
           <Button
             ref={confirmRef}

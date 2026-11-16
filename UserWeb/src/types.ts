@@ -251,3 +251,17 @@ export interface InterestListResponse {
   items: InterestListItem[];
   nextCursor: string | null;
 }
+
+/** Story 8 named shortlist. `profileCount` counts stored memberships, hidden profiles included. */
+export interface Shortlist {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  profileCount: number;
+  createdAt: string;
+}
+
+export interface ShortlistProfilePage {
+  items: DiscoveryCard[];
+  nextCursor: string | null;
+}

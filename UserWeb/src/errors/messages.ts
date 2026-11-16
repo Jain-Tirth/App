@@ -32,6 +32,7 @@ export type ErrorContext =
   | 'submit'
   | 'withdraw'
   | 'interests'
+  | 'shortlists'
   | 'generic';
 
 export interface FriendlyError {
@@ -54,6 +55,14 @@ export function formatWait(seconds: number): string {
   if (minutes === 0) return unit(hours, 'hour');
   return `${unit(hours, 'hour')} and ${unit(minutes, 'minute')}`;
 }
+
+/**
+ * Sentences for the shortlist name field. Kept apart from the iterated tables
+ * because the length sentence names the limit itself.
+ */
+export const SHORTLIST_NAME_REQUIRED_MESSAGE = 'Enter a name for your list.';
+export const SHORTLIST_NAME_TOO_LONG_MESSAGE = 'Use 100 characters or fewer.';
+const SHORTLIST_NAME_TAKEN_MESSAGE = 'You already have a list with this name.';
 
 const ACCOUNT_CONFLICT =
   'We could not create an account with these details. If you already have an account, please sign in instead.';
@@ -154,6 +163,17 @@ export const CODE_MESSAGES: Record<string, Builder> = {
     'We could not find that interest. Please refresh your interests and try again.',
   ),
   COOLDOWN_NOT_FOUND: constant('There is no active cooldown for this pair.'),
+  DEFAULT_SHORTLIST_PROTECTED: constant(
+    'Your Shortlisted list is always kept, so it cannot be renamed or deleted. You can create another list instead.',
+  ),
+  SHORTLIST_NAME_TAKEN: constant(SHORTLIST_NAME_TAKEN_MESSAGE),
+  SHORTLIST_NOT_FOUND: constant(
+    'That list is no longer available. We have refreshed your lists, so please choose one and try again.',
+  ),
+  SHORTLIST_LIMIT_EXCEEDED: constant(
+    'You have reached the limit for your shortlists. Please remove a profile or a list you no longer need and try again.',
+  ),
+  CANNOT_SHORTLIST_SELF: constant('You cannot add your own profile to a shortlist.'),
 
   // Status-derived codes. Context-specific wording is applied first.
   BAD_REQUEST: constant('We could not complete that. Please check your details and try again.'),
@@ -241,7 +261,24 @@ export const CONTEXT_CODE_MESSAGES: Record<string, string> = {
     'Your profile needs to be approved before you can send or answer interests. You can follow its progress on your status page.',
   'interests:RATE_LIMITED':
     'You have reached the limit of interests you can send today. Please try again tomorrow.',
+  'shortlists:PROFILE_NOT_FOUND':
+    "This profile isn't available, so it cannot be added to a shortlist.",
+  'shortlists:VALIDATION_ERROR':
+    'That list name could not be used. Please check it and try again.',
 };
+
+/** Which sentence the shortlist name field gets for the issues the server named. */
+function shortlistNameMessage(details: unknown): string {
+  const issues =
+    details && typeof details === 'object' && Array.isArray((details as { issues?: unknown }).issues)
+      ? ((details as { issues: unknown[] }).issues as unknown[])
+      : [];
+  const tooLong = issues.some(
+    (issue) =>
+      typeof issue === 'string' && fieldFromIssue(issue) === 'name' && /shorter than/i.test(issue),
+  );
+  return tooLong ? SHORTLIST_NAME_TOO_LONG_MESSAGE : SHORTLIST_NAME_REQUIRED_MESSAGE;
+}
 
 function readRetryAfter(details: unknown): unknown {
   return details && typeof details === 'object' && 'retryAfter' in details
@@ -322,8 +359,20 @@ export function describeError(error: unknown, context: ErrorContext = 'generic')
   let message = resolveMessage(error, context);
 
   if (error.code === 'VALIDATION_ERROR') {
-    fields = validationFields(error.details);
-    if (Object.keys(fields).length > 0) message = 'Please correct the details marked below.';
+    if (context === 'shortlists') {
+      const names = Array.isArray((error.details as { issues?: unknown } | null)?.issues)
+        ? ((error.details as { issues: unknown[] }).issues.map(fieldFromIssue) as Array<string | null>)
+        : [];
+      if (names.includes('name')) {
+        fields = { name: shortlistNameMessage(error.details) };
+        message = fields.name;
+      }
+    } else {
+      fields = validationFields(error.details);
+      if (Object.keys(fields).length > 0) message = 'Please correct the details marked below.';
+    }
+  } else if (error.code === 'SHORTLIST_NAME_TAKEN') {
+    fields = { name: message };
   } else if (error.code === 'AGE_BELOW_MINIMUM') {
     fields = { dateOfBirth: message };
   } else if (error.code === 'INVALID_DATE_OF_BIRTH') {

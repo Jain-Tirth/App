@@ -18,6 +18,8 @@ import type {
   RecordedConsent,
   RegisterPayload,
   RegisterResponse,
+  Shortlist,
+  ShortlistProfilePage,
   VerifyOtpResponse,
 } from './types';
 import { env } from './config/env';
@@ -250,6 +252,43 @@ export const api = {
   },
   listReceivedInterests(token: string, query: InterestListQuery = {}) {
     return request<InterestListResponse>(`/interests/received${interestQuery(query)}`, {}, token);
+  },
+  listShortlists(token: string) {
+    return request<Shortlist[]>('/shortlists', {}, token);
+  },
+  createShortlist(token: string, name: string) {
+    return request<Shortlist>('/shortlists', { method: 'POST', ...json({ name }) }, token);
+  },
+  renameShortlist(token: string, id: string, name: string) {
+    return request<Shortlist>(
+      `/shortlists/${encodeURIComponent(id)}`,
+      { method: 'PATCH', ...json({ name }) },
+      token,
+    );
+  },
+  deleteShortlist(token: string, id: string) {
+    return request<void>(`/shortlists/${encodeURIComponent(id)}`, { method: 'DELETE' }, token);
+  },
+  listShortlistProfiles(token: string, id: string, query: InterestListQuery = {}) {
+    return request<ShortlistProfilePage>(
+      `/shortlists/${encodeURIComponent(id)}/profiles${interestQuery(query)}`,
+      {},
+      token,
+    );
+  },
+  addToShortlist(token: string, id: string, profileRef: string) {
+    return request<{ added: true }>(
+      `/shortlists/${encodeURIComponent(id)}/profiles/${encodeURIComponent(profileRef)}`,
+      { method: 'PUT' },
+      token,
+    );
+  },
+  removeFromShortlist(token: string, id: string, profileRef: string) {
+    return request<void>(
+      `/shortlists/${encodeURIComponent(id)}/profiles/${encodeURIComponent(profileRef)}`,
+      { method: 'DELETE' },
+      token,
+    );
   },
   submitProfile(token: string) {
     return request<{ status: string }>('/profiles/submit', { method: 'POST' }, token);

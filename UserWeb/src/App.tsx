@@ -17,6 +17,7 @@ import { WizardPage } from './pages/RegisterPage';
 import { AppPage } from './pages/AppPage';
 import { ProfileDetailPage } from './pages/ProfileDetailPage';
 import { InterestsPage } from './pages/InterestsPage';
+import { ShortlistsPage } from './pages/ShortlistsPage';
 
 const OTP_CONTEXT_KEY = 'user_otp_context';
 
@@ -280,6 +281,20 @@ function AppRouter() {
           accessToken ? (
             reviewStatus === 'approved' ? (
               member(accessToken, <InterestsPage token={accessToken} onLogout={clearSession} />)
+            ) : (
+              <Navigate to={nextStepPath} replace />
+            )
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/shortlists"
+        element={
+          accessToken ? (
+            reviewStatus === 'approved' ? (
+              member(accessToken, <ShortlistsPage token={accessToken} onLogout={clearSession} />)
             ) : (
               <Navigate to={nextStepPath} replace />
             )

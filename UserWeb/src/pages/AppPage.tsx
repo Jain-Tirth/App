@@ -108,6 +108,15 @@ export function AppPage({ token, profile, onLogout }: AppPageProps) {
             </Button>
 
             <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs border-brand-border hover:bg-brand-primary-soft hover:text-brand-primary"
+            >
+              <Link to="/shortlists">Shortlists</Link>
+            </Button>
+
+            <Button
               variant="outline"
               size="sm"
               aria-label="Sign out"
