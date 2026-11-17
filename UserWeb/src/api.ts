@@ -1,4 +1,7 @@
 import type {
+  AccountSettingsResponse,
+  DeleteRequestAccepted,
+  ExportRequestAccepted,
   ConsentDocumentsResponse,
   ConsentInput,
   ConsentRecordsResponse,
@@ -25,6 +28,7 @@ import type {
 import { env } from './config/env';
 import { ApiError } from './apiError';
 import { buildSearchParams } from './lib/discovery';
+import { readScheduledPurgeAt, type SettingsPatch } from './lib/accountSettings';
 
 export { ApiError } from './apiError';
 
@@ -35,6 +39,18 @@ let notApprovedListener: (() => void) | null = null;
 /** Registers the one app-level reaction to PROFILE_NOT_APPROVED (refresh the profile, re-route). */
 export function onProfileNotApproved(listener: (() => void) | null): void {
   notApprovedListener = listener;
+}
+
+let deletionPendingListener: ((scheduledPurgeAt: string | null) => void) | null = null;
+
+/**
+ * Registers the one app-level reaction to a 403 ACCOUNT_DELETION_PENDING from
+ * any call: the app shows the deleted-pending screen with the purge date.
+ */
+export function onAccountDeletionPending(
+  listener: ((scheduledPurgeAt: string | null) => void) | null,
+): void {
+  deletionPendingListener = listener;
 }
 
 function parseRetryAfter(value: string | null): number | null {
@@ -102,6 +118,31 @@ function toApiError(response: Response, text: string): ApiError {
   });
 }
 
+/** Runs the app-level reactions that any failed call can trigger, then hands the error back. */
+function reactToError(apiError: ApiError): ApiError {
+  if (apiError.code === 'PROFILE_NOT_APPROVED') notApprovedListener?.();
+  if (apiError.code === 'ACCOUNT_DELETION_PENDING') {
+    deletionPendingListener?.(readScheduledPurgeAt(apiError.details));
+  }
+  return apiError;
+}
+
+/**
+ * Fetches the export archive with the Bearer token and returns it as a Blob, so
+ * the caller can save it without ever rendering or parsing it.
+ */
+async function fetchBlob(path: string, token: string): Promise<Blob> {
+  const response = await send(
+    `${env.apiBaseUrl}${path}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+    DEFAULT_TIMEOUT_MS,
+  );
+  if (!response.ok) {
+    throw reactToError(toApiError(response, await response.text()));
+  }
+  return response.blob();
+}
+
 export async function request<T>(
   path: string,
   options: RequestInit & { timeoutMs?: number } = {},
@@ -124,9 +165,7 @@ export async function request<T>(
   const text = await response.text();
 
   if (!response.ok) {
-    const apiError = toApiError(response, text);
-    if (apiError.code === 'PROFILE_NOT_APPROVED') notApprovedListener?.();
-    throw apiError;
+    throw reactToError(toApiError(response, text));
   }
 
   if (response.status === 204 || text.trim() === '') {
@@ -322,6 +361,41 @@ export const api = {
   },
   saveStep5(token: string, payload: Record<string, unknown>) {
     return request<ProfileResponse>('/profiles/step-5', { method: 'PUT', ...json(payload) }, token);
+  },
+
+  // Account (story 9)
+  getSettings(token: string) {
+    return request<AccountSettingsResponse>('/account/settings', {}, token);
+  },
+  updateSettings(token: string, patch: SettingsPatch) {
+    return request<AccountSettingsResponse>(
+      '/account/settings',
+      { method: 'PATCH', ...json(patch) },
+      token,
+    );
+  },
+  logoutAll(token: string) {
+    return request<{ message: string }>('/account/logout-all', { method: 'POST' }, token);
+  },
+  requestExport(token: string, password: string) {
+    return request<ExportRequestAccepted>(
+      '/account/export-request',
+      { method: 'POST', ...json({ password }) },
+      token,
+    );
+  },
+  downloadExport(token: string, requestId: string) {
+    return fetchBlob(`/account/export/${encodeURIComponent(requestId)}`, token);
+  },
+  requestDeletion(token: string, password: string) {
+    return request<DeleteRequestAccepted>(
+      '/account/delete-request',
+      { method: 'POST', ...json({ password }) },
+      token,
+    );
+  },
+  cancelDeletion(token: string) {
+    return request<{ message: string }>('/account/delete-request', { method: 'DELETE' }, token);
   },
 
   // Consents

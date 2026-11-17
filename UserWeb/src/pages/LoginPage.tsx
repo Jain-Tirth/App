@@ -9,9 +9,11 @@ import { describeError, type FriendlyError } from '../errors/messages';
 
 interface LoginPageProps {
   onLoggedIn: (data: LoginResponse) => void;
+  /** A one-off message shown above the form, for example after logging out everywhere. */
+  notice?: string | null;
 }
 
-export function LoginPage({ onLoggedIn }: LoginPageProps) {
+export function LoginPage({ onLoggedIn, notice = null }: LoginPageProps) {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -43,6 +45,16 @@ export function LoginPage({ onLoggedIn }: LoginPageProps) {
         <p className="mt-1 text-sm text-brand-muted">
           Sign in to access verified Dhobi Matrimony profiles.
         </p>
+
+        {notice ? (
+          <p
+            role="status"
+            data-testid="login-notice"
+            className="mt-4 rounded-xl border border-brand-border bg-brand-canvas p-3 text-sm text-brand-charcoal"
+          >
+            {notice}
+          </p>
+        ) : null}
 
         <form onSubmit={submit} className="mt-6 space-y-4">
           <div>

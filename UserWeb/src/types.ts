@@ -265,3 +265,23 @@ export interface ShortlistProfilePage {
   items: DiscoveryCard[];
   nextCursor: string | null;
 }
+
+/** Story 9. The server also returns profileVisibility; the UI ignores it. */
+export interface AccountSettingsResponse {
+  language: 'en' | 'hi' | 'gu';
+  notifications: Record<string, boolean>;
+  profileVisibility?: string;
+}
+
+export interface ExportRequestAccepted {
+  requestId: string;
+  status: 'pending';
+  expiresAt: string;
+  downloadPath: string;
+}
+
+export interface DeleteRequestAccepted {
+  status: 'pending';
+  requestedAt: string;
+  scheduledPurgeAt: string;
+}

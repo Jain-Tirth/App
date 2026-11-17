@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
-import { api, onProfileNotApproved } from './api';
+import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { api, onAccountDeletionPending, onProfileNotApproved } from './api';
+import { clearAllExportRequests } from './lib/exportRequest';
+import { DeletedPendingPage } from './pages/DeletedPendingPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { hasErrorCode } from './apiError';
 import { resetCache } from './lib/shortlistCache';
 import { routeForStatus } from './lib/profileStatus';
@@ -21,6 +24,7 @@ import { InterestsPage } from './pages/InterestsPage';
 import { ShortlistsPage } from './pages/ShortlistsPage';
 
 const OTP_CONTEXT_KEY = 'user_otp_context';
+const LOGGED_OUT_EVERYWHERE_NOTICE = 'You have been logged out of all devices.';
 
 function readOtpContext(): OtpContext | null {
   try {
@@ -52,14 +56,31 @@ function AppRouter() {
   const [loadError, setLoadError] = useState<FriendlyError | null>(null);
   const [otpContext, setOtpContext] = useState<OtpContext | null>(readOtpContext);
 
+  const [deletion, setDeletion] = useState<{ purgeAt: string | null } | null>(null);
+  const [loginNotice, setLoginNotice] = useState<string | null>(null);
+  const navigate = useNavigate();
+
   const clearSession = useCallback(() => {
     localStorage.removeItem('user_access_token');
     localStorage.removeItem('user_refresh_token');
+    clearAllExportRequests();
     resetCache();
     setAccessToken(null);
     setRefreshToken(null);
     setProfile(null);
+    setDeletion(null);
   }, []);
+
+  // Any call answering 403 ACCOUNT_DELETION_PENDING sends the app to the deleted-pending screen.
+  useEffect(() => {
+    onAccountDeletionPending((purgeAt) => setDeletion({ purgeAt }));
+    return () => onAccountDeletionPending(null);
+  }, []);
+
+  const handleLoggedOutEverywhere = useCallback(() => {
+    clearSession();
+    setLoginNotice(LOGGED_OUT_EVERYWHERE_NOTICE);
+  }, [clearSession]);
 
   const loadProfile = useCallback(
     async (token: string) => {
@@ -70,6 +91,8 @@ function AppRouter() {
       } catch (err) {
         if (hasErrorCode(err, 'UNAUTHORIZED')) {
           clearSession();
+        } else if (hasErrorCode(err, 'ACCOUNT_DELETION_PENDING')) {
+          // The api layer already switched the app to the deleted-pending screen.
         } else {
           setLoadError(describeError(err, 'profile'));
         }
@@ -106,6 +129,7 @@ function AppRouter() {
     localStorage.setItem('user_refresh_token', response.tokens.refreshToken);
     sessionStorage.removeItem(OTP_CONTEXT_KEY);
     setOtpContext(null);
+    setLoginNotice(null);
     // Hold the router on a spinner until the profile arrives, so the member lands on the right step.
     setLoadingInitial(true);
     setAccessToken(response.tokens.accessToken);
@@ -119,6 +143,32 @@ function AppRouter() {
 
   function member(token: string, page: ReactNode) {
     return <ConsentGate token={token}>{page}</ConsentGate>;
+  }
+
+  // A pending deletion owns every route: one screen with the purge date and the cancel option.
+  if (accessToken && deletion) {
+    return (
+      <Routes>
+        <Route
+          path="/account-deletion"
+          element={
+            <DeletedPendingPage
+              token={accessToken}
+              purgeAt={deletion.purgeAt}
+              onLogout={clearSession}
+              onCancelled={() => {
+                setDeletion(null);
+                setLoadError(null);
+                setLoadingInitial(true);
+                void loadProfile(accessToken);
+                navigate('/app', { replace: true });
+              }}
+            />
+          }
+        />
+        <Route path="*" element={<Navigate to="/account-deletion" replace />} />
+      </Routes>
+    );
   }
 
   if (loadingInitial) {
@@ -174,7 +224,30 @@ function AppRouter() {
       <Route
         path="/login"
         element={
-          accessToken ? <Navigate to={nextStepPath} replace /> : <LoginPage onLoggedIn={handleAuth} />
+          accessToken ? (
+            <Navigate to={nextStepPath} replace />
+          ) : (
+            <LoginPage onLoggedIn={handleAuth} notice={loginNotice} />
+          )
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          accessToken ? (
+            member(
+              accessToken,
+              <SettingsPage
+                token={accessToken}
+                userId={profile?.profile?.userId ?? profile?.profile?.user?.id ?? 'member'}
+                onLogout={clearSession}
+                onLoggedOutEverywhere={handleLoggedOutEverywhere}
+                onDeletionScheduled={(purgeAt) => setDeletion({ purgeAt })}
+              />,
+            )
+          ) : (
+            <Navigate to="/login" replace />
+          )
         }
       />
       <Route

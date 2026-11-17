@@ -33,6 +33,9 @@ export type ErrorContext =
   | 'withdraw'
   | 'interests'
   | 'shortlists'
+  | 'settings'
+  | 'stepUp'
+  | 'export'
   | 'generic';
 
 export interface FriendlyError {
@@ -63,6 +66,10 @@ export function formatWait(seconds: number): string {
 export const SHORTLIST_NAME_REQUIRED_MESSAGE = 'Enter a name for your list.';
 export const SHORTLIST_NAME_TOO_LONG_MESSAGE = 'Use 100 characters or fewer.';
 const SHORTLIST_NAME_TAKEN_MESSAGE = 'You already have a list with this name.';
+
+const EXPORT_EXPIRED_MESSAGE = 'This download has expired. Request your data again.';
+const EXPORT_NOT_FOUND_MESSAGE = 'That download is not available.';
+const STEP_UP_RATE_LIMITED = 'Too many attempts. Please wait a few minutes before trying again.';
 
 const ACCOUNT_CONFLICT =
   'We could not create an account with these details. If you already have an account, please sign in instead.';
@@ -174,6 +181,18 @@ export const CODE_MESSAGES: Record<string, Builder> = {
     'You have reached the limit for your shortlists. Please remove a profile or a list you no longer need and try again.',
   ),
   CANNOT_SHORTLIST_SELF: constant('You cannot add your own profile to a shortlist.'),
+  STEP_UP_FAILED: constant('That password is not correct.'),
+  REQUEST_ALREADY_PENDING: constant(
+    'You already have an export request waiting. Please use the download button once it is ready.',
+  ),
+  ACCOUNT_PURGED: constant('This account has already been deleted.'),
+  ACCOUNT_DELETION_PENDING: constant(
+    'Your account is scheduled for deletion. You can cancel the deletion to use it again.',
+  ),
+  DELETE_REQUEST_NOT_FOUND: constant('There is no deletion request to cancel.'),
+  EXPORT_EXPIRED: constant(EXPORT_EXPIRED_MESSAGE),
+  EXPORT_NOT_FOUND: constant(EXPORT_NOT_FOUND_MESSAGE),
+  GONE: constant(GENERIC_MESSAGE),
 
   // Status-derived codes. Context-specific wording is applied first.
   BAD_REQUEST: constant('We could not complete that. Please check your details and try again.'),
@@ -212,6 +231,7 @@ const STATUS_DERIVED_CODES = new Set([
   'RATE_LIMITED',
   'INTERNAL_ERROR',
   'HTTP_ERROR',
+  'GONE',
 ]);
 
 /**
@@ -233,6 +253,9 @@ export const CONTEXT_STATUS_MESSAGES: Record<string, string> = {
   'refresh:401': 'Your session has ended. Please sign in again.',
   'storage:403': 'The upload link has expired. Please try uploading the file again.',
   'storage:400': 'The upload was not accepted. Please try uploading the file again.',
+  'stepUp:429': STEP_UP_RATE_LIMITED,
+  'export:410': EXPORT_EXPIRED_MESSAGE,
+  'export:404': EXPORT_NOT_FOUND_MESSAGE,
   '*:401': SESSION_EXPIRED,
 };
 
@@ -265,6 +288,9 @@ export const CONTEXT_CODE_MESSAGES: Record<string, string> = {
     "This profile isn't available, so it cannot be added to a shortlist.",
   'shortlists:VALIDATION_ERROR':
     'That list name could not be used. Please check it and try again.',
+  'settings:VALIDATION_ERROR': 'That language is not available. Please choose one from the list.',
+  'stepUp:RATE_LIMITED': STEP_UP_RATE_LIMITED,
+  'stepUp:VALIDATION_ERROR': 'Please enter your password.',
 };
 
 /** Which sentence the shortlist name field gets for the issues the server named. */
