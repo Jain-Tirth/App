@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Download, Share } from 'lucide-react';
 import { Button } from './ui/button';
-import { installPromptMode, isDismissed, rememberDismissal } from '../pwa/installPrompt';
+import { installPromptMode, isDismissed, rememberDismissal, rememberShown, wasShown } from '../pwa/installPrompt';
 import { currentPlatform, isIosSafari } from '../pwa/platform';
 import { setPwaState, usePwaState } from '../pwa/pwaStore';
 import { userIdFromAccessToken } from '../pwa/tokenUser';
@@ -13,7 +13,9 @@ import { userIdFromAccessToken } from '../pwa/tokenUser';
 export function InstallPrompt({ token }: { token: string }) {
   const userId = userIdFromAccessToken(token);
   const { installEvent, installed } = usePwaState();
-  const [dismissed, setDismissed] = useState(() => (userId ? isDismissed(userId) : true));
+  // Hidden once dismissed, or once it has already been displayed to this member (shown once).
+  const [dismissed, setDismissed] = useState(() => (userId ? isDismissed(userId) || wasShown(userId) : true));
+  const anchorRef = useRef<HTMLDivElement>(null);
 
   const mode = installPromptMode({
     installed,
@@ -21,10 +23,18 @@ export function InstallPrompt({ token }: { token: string }) {
     hasNativeEvent: installEvent !== null,
     iosSafari: isIosSafari(currentPlatform()),
   });
-  if (!mode || !userId) return null;
+
+  useEffect(() => {
+    if (mode && userId) rememberShown(userId);
+  }, [mode, userId]);
+
+  // Stable, always-mounted focus target so keyboard focus survives the prompt unmounting.
+  const anchor = <div ref={anchorRef} tabIndex={-1} data-testid="install-focus-anchor" className="outline-none" />;
+  if (!mode || !userId) return anchor;
 
   function dismiss() {
     if (userId) rememberDismissal(userId);
+    anchorRef.current?.focus();
     setDismissed(true);
   }
 
@@ -38,10 +48,13 @@ export function InstallPrompt({ token }: { token: string }) {
       // The browser refused to show its dialog; the prompt stays so the member can try again.
     }
     // A captured event can be used only once.
+    anchorRef.current?.focus();
     setPwaState({ installEvent: null });
   }
 
   return (
+    <>
+    {anchor}
     <section
       aria-label="Install the app"
       data-testid="install-prompt"
@@ -69,5 +82,6 @@ export function InstallPrompt({ token }: { token: string }) {
         </Button>
       </div>
     </section>
+    </>
   );
 }

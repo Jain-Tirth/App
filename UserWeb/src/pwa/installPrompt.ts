@@ -29,6 +29,27 @@ export function isDismissed(userId: string): boolean {
   }
 }
 
+/** The prompt is shown once per member: this flag is set on first display. */
+export function shownKey(userId: string): string {
+  return `pwa_install_shown:${userId}`;
+}
+
+export function wasShown(userId: string): boolean {
+  try {
+    return localStorage.getItem(shownKey(userId)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function rememberShown(userId: string): void {
+  try {
+    localStorage.setItem(shownKey(userId), '1');
+  } catch {
+    // Storage unavailable: the prompt is limited to this page view.
+  }
+}
+
 export function rememberDismissal(userId: string): void {
   try {
     localStorage.setItem(dismissalKey(userId), '1');
