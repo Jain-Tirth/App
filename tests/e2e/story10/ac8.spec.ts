@@ -135,53 +135,65 @@ const activeInfo = (page: Page) =>
     return { tag: a?.tagName, testid: a?.getAttribute('data-testid'), w: r?.width, h: r?.height };
   });
 
-test('AC8 after dismissing the install prompt by keyboard, focus lands on the focus anchor (not BODY)', async ({ page }) => {
-  const m = await approved();
-  await firstVisit(page, '/login');
-  await fireInstallEvent(page);
-  await spaLogin(page, m, /\/app/);
-  const dismiss = page.getByTestId('install-dismiss');
-  await expect(dismiss).toBeVisible();
-  await tabTo(page, dismiss);
-  await page.keyboard.press('Enter');
-  await expect(page.getByTestId('install-prompt')).toHaveCount(0);
-  const info = await activeInfo(page);
-  test.info().annotations.push({ type: 'active-after-dismiss', description: JSON.stringify(info) });
-  expect(info.testid).toBe('install-focus-anchor');
-  await attachShot(page, 'ac8-after-dismiss-focus');
-});
-
-test('AC8 after install (appinstalled via Install app), focus lands on the focus anchor (not BODY)', async ({ page }) => {
-  const m = await submitted();
-  await firstVisit(page, '/login');
-  await fireInstallEvent(page, 'accepted');
-  await spaLogin(page, m, /\/pending/);
-  const install = page.getByTestId('install-button');
-  await tabTo(page, install);
-  await page.keyboard.press('Enter');
-  await expect.poll(() => page.evaluate(() => (window as any).__installPromptCalls)).toBe(1);
-  await page.evaluate(() => window.dispatchEvent(new Event('appinstalled')));
-  await expect(page.getByTestId('install-prompt')).toHaveCount(0);
-  const info = await activeInfo(page);
-  test.info().annotations.push({ type: 'active-after-install', description: JSON.stringify(info) });
-  expect(info.testid).toBe('install-focus-anchor');
-});
-
-// Judgement probe: the anchor is zero size. Records whether a sighted keyboard user can see where focus is after dismissal.
-test('AC8 JUDGEMENT: focus anchor visibility after dismissal (records size and indicator; fails if focus is effectively invisible)', async ({ page }) => {
-  const m = await approved();
-  await firstVisit(page, '/login');
-  await fireInstallEvent(page);
-  await spaLogin(page, m, /\/app/);
-  const dismiss = page.getByTestId('install-dismiss');
-  await tabTo(page, dismiss);
-  await page.keyboard.press('Enter');
-  await expect(page.getByTestId('install-prompt')).toHaveCount(0);
-  const info = await activeInfo(page);
-  expect(info.testid).toBe('install-focus-anchor');
-  const visible = (info.w ?? 0) > 0 && (info.h ?? 0) > 0;
+async function assertHeadingFocus(page: Page, name: string) {
+  const heading = page.getByTestId('page-heading');
+  await expect(heading).toBeFocused();
+  const info = await page.evaluate(() => {
+    const a = document.activeElement as HTMLElement;
+    const r = a.getBoundingClientRect();
+    return { w: r.width, h: r.height, boxShadow: getComputedStyle(a).boxShadow };
+  });
+  test.info().annotations.push({ type: name, description: JSON.stringify(info) });
+  expect(info.h).toBeGreaterThan(0);
+  expect(info.w).toBeGreaterThan(0);
+  expect(info.boxShadow, 'focus ring (box-shadow) while focused').not.toBe('none');
+  await attachShot(page, name);
+  await expect(page.getByTestId('install-focus-anchor')).toHaveCount(0);
+  const unfocused = await heading.evaluate((el) => { (el as HTMLElement).blur(); return getComputedStyle(el).boxShadow; });
+  expect(unfocused).toBe('none');
+  await heading.focus();
   await page.keyboard.press('Tab');
   const next = await activeInfo(page);
-  test.info().annotations.push({ type: 'anchor-and-next-tab', description: JSON.stringify({ info, visible, next }) });
-  expect(visible, `anchor is ${info.w}x${info.h}: a sighted keyboard user sees no focus indicator; next Tab goes to ${JSON.stringify(next)}`).toBe(true);
-});
+  test.info().annotations.push({ type: name + '-next', description: JSON.stringify(next) });
+  expect(['BUTTON', 'A', 'INPUT']).toContain(next.tag);
+  // tabindex=-1 heading is not in the Tab sequence: Shift+Tab leaves it for the previous tabbable control (no trap)
+  await page.keyboard.press('Shift+Tab');
+  const back = await activeInfo(page);
+  test.info().annotations.push({ type: name + '-shift-tab', description: JSON.stringify(back) });
+  expect(back.testid).not.toBe('page-heading');
+  // BODY is acceptable here: the control after the heading can be the first tabbable element, so Shift+Tab leaves the document start
+  await page.keyboard.press('Tab');
+  expect((await activeInfo(page)).tag).toBe(next.tag);
+  // from the heading itself, Shift+Tab also moves away
+  await heading.focus();
+  await page.keyboard.press('Shift+Tab');
+  expect((await activeInfo(page)).testid).not.toBe('page-heading');
+}
+
+for (const [label, mk, path] of [['pending', submitted, /\/pending/], ['app', approved, /\/app/]] as const) {
+  test(`AC8 /${label}: after keyboard dismissal focus is the visible page heading with a ring, Tab and Shift+Tab free`, async ({ page }) => {
+    const m = await mk();
+    await firstVisit(page, '/login');
+    await fireInstallEvent(page);
+    await spaLogin(page, m, path);
+    const dismiss = page.getByTestId('install-dismiss');
+    await expect(dismiss).toBeVisible();
+    await tabTo(page, dismiss);
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('install-prompt')).toHaveCount(0);
+    await assertHeadingFocus(page, `ac8-${label}-after-dismiss`);
+  });
+
+  test(`AC8 /${label}: after install focus is the visible page heading with a ring, Tab and Shift+Tab free`, async ({ page }) => {
+    const m = await mk();
+    await firstVisit(page, '/login');
+    await fireInstallEvent(page, 'accepted');
+    await spaLogin(page, m, path);
+    await tabTo(page, page.getByTestId('install-button'));
+    await page.keyboard.press('Enter');
+    await expect.poll(() => page.evaluate(() => (window as any).__installPromptCalls)).toBe(1);
+    await page.evaluate(() => window.dispatchEvent(new Event('appinstalled')));
+    await expect(page.getByTestId('install-prompt')).toHaveCount(0);
+    await assertHeadingFocus(page, `ac8-${label}-after-install`);
+  });
+}
