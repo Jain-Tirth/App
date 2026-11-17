@@ -562,5 +562,179 @@ export async function run({ baseUrl, database }) {
       `ops: ${summary.join(' | ')}; undocumented-or-missing=${JSON.stringify(missing)}; StepUpRequest=${JSON.stringify(stepUp)}; codes absent from yaml=${JSON.stringify(codesMissing)}; ErrorEnvelope referenced=${envelope}; schema names=${Object.keys(schemas).filter((k) => /Account|Settings|Export|Deletion|StepUp|Notif/i.test(k))}`];
   });
 
+  // =================================================================== iteration 2 (verdict round 1 fixes)
+  const tokensOf = (r) => r.body?.tokens ?? r.body ?? {};
+  const asTx = async (fn) => {
+    await db('begin');
+    try { return await fn(); } finally { await db('rollback').catch(() => {}); }
+  };
+
+  await check('IT2-control-8-parallel-authenticated-GETs-no-step-up', async () => {
+    // control for the race row below: same burst size, no advisory lock, no bcrypt
+    const W = await approvedMember('male', 'Burst Control');
+    const rs = await Promise.all(Array.from({ length: 8 }, () => GET('/account/settings', W.token)));
+    return [rs.every((r) => r.status === 200), `8 parallel GET /account/settings -> ${rs.map((r) => r.status)}`];
+  });
+  await check('IT2-step-up-race-8-parallel-wrong-passwords', async () => {
+    const W = await approvedMember('male', 'Race Stepup');
+    const V = await approvedMember('male', 'Race Sibling');
+    const rs = await Promise.all(Array.from({ length: 8 }, (_, i) => POST('/account/export-request', W.token, { password: `Wrong-race${i}` })));
+    const c403 = rs.filter((r) => r.status === 403).length;
+    const c429 = rs.filter((r) => r.status === 429).length;
+    const rows = await row(`select count(*)::int n from "StepUpFailures" where "userId"=$1`, [W.userId]);
+    const right = await POST('/account/export-request', W.token, { password: PW });
+    const rightDel = await POST('/account/delete-request', W.token, { password: PW });
+    const exp = await row(`select count(*)::int n from "AccountExportRequests" where "userId"=$1`, [W.userId]);
+    const sib = await POST('/account/export-request', V.token, { password: PW });
+    return [c403 === 5 && c429 === 3 && rows.n === 5 && right.status === 429 && rightDel.status === 429 && exp.n === 0 && sib.status === 202,
+      `8 parallel wrong -> 403 x${c403}, 429 x${c429} (statuses ${rs.map((r) => r.status)}); StepUpFailures rows=${rows.n}; right export -> ${right.status}; right delete -> ${rightDel.status}; export rows=${exp.n}; sibling right password -> ${sib.status}`];
+  });
+
+  await check('IT2-logout-all-racing-refresh-no-token-survives', async () => {
+    const N = 6;
+    const detail = [];
+    let bad = 0;
+    for (let i = 0; i < N; i++) {
+      const lg = await login(L);
+      const delayMs = [0, 50, 150, 300, 500, 800][i % 6]; // staggered so the refresh sometimes wins, sometimes loses
+      const [ref, lo] = await Promise.all([POST('/auth/refresh', undefined, { refreshToken: lg.refreshToken }),
+        new Promise((r) => setTimeout(r, delayMs)).then(() => POST('/account/logout-all', lg.token, undefined))]);
+      const t = tokensOf(ref);
+      const acc = t.accessToken ? await GET('/account/settings', t.accessToken) : null;
+      const ref2 = t.refreshToken ? await POST('/auth/refresh', undefined, { refreshToken: t.refreshToken }) : null;
+      const oldAcc = await GET('/account/settings', lg.token);
+      const survived = (acc && acc.status === 200) || (ref2 && (ref2.status === 200 || ref2.status === 201)) || oldAcc.status === 200;
+      if (survived || lo.status !== 200) bad++;
+      detail.push(`#${i} (logout-all +${delayMs}ms): refresh ${ref.status}, logout-all ${lo.status}, raced access ${acc?.status ?? '-'}, raced refresh ${ref2?.status ?? '-'}, original access ${oldAcc.status}`);
+    }
+    return [bad === 0, `${N} races, tokens accepted after both completed=${bad}; ${detail.join(' | ')}`];
+  });
+
+  await check('IT2-sv-claim-after-logout-all-login-and-refresh', async () => {
+    const lg = await login(L);
+    const svDb = (await row(`select "sessionVersion" v from "Users" where id=$1`, [L.userId])).v;
+    const claims = b64(lg.token);
+    const rcl = b64(lg.refreshToken);
+    const rf = await POST('/auth/refresh', undefined, { refreshToken: lg.refreshToken });
+    const t = tokensOf(rf);
+    const rfClaims = t.accessToken ? b64(t.accessToken) : {};
+    const ok = await GET('/account/settings', t.accessToken);
+    return [lg.status === 200 && svDb >= 1 && claims.sv === svDb && rcl.sv === svDb && (rf.status === 200 || rf.status === 201) && rfClaims.sv === svDb && ok.status === 200,
+      `Users.sessionVersion=${svDb}; login access sv=${claims.sv}, refresh sv=${rcl.sv}; refreshed access sv=${rfClaims.sv}, refresh -> ${rf.status}, refreshed token works ${ok.status}`];
+  });
+
+  await check('IT2-second-delete-request-contract', async () => {
+    const G = await approvedMember('female', 'Twice Deleter');
+    const lg = await login(G);
+    const first = await POST('/account/delete-request', lg.token, { password: PW });
+    const lg2 = await login(G);
+    const second = await POST('/account/delete-request', lg2.token, { password: PW });
+    const st = await row(`select "deletionScheduledPurgeAt" b from "Users" where id=$1`, [G.userId]);
+    const audits = await row(`select count(*)::int n from "AccountAuditLog" where "userId"=$1 and "eventType"='deletion_requested'`, [G.userId]);
+    // parallel first requests on a fresh member: idempotent, one schedule, one audit row
+    const H = await approvedMember('female', 'Parallel Deleter');
+    const hl = await login(H);
+    const par = await Promise.all([POST('/account/delete-request', hl.token, { password: PW }), POST('/account/delete-request', hl.token, { password: PW })]);
+    const hAud = await row(`select count(*)::int n from "AccountAuditLog" where "userId"=$1 and "eventType"='deletion_requested'`, [H.userId]);
+    const hSt = await row(`select "deletionScheduledPurgeAt" b from "Users" where id=$1`, [H.userId]);
+    const okPar = par.every((r) => r.status === 202 || r.status === 403) && par.some((r) => r.status === 202)
+      && par.filter((r) => r.status === 202).every((r) => r.body?.scheduledPurgeAt === hSt.b.toISOString());
+    // clean up: leave no pending deletion behind (Backend itests purge with a far-future clock and would pick these up)
+    await DEL('/account/delete-request', (await login(G)).token);
+    await DEL('/account/delete-request', (await login(H)).token);
+    let docs = 'yaml unavailable';
+    let docsOk = false;
+    if (yaml) {
+      const spec = yaml.parse(readFileSync(path.join(BACKEND_DIR, 'openapi.yaml'), 'utf8'));
+      const del = Object.keys(spec.paths['/account/delete-request'].post.responses);
+      const exp = Object.keys(spec.paths['/account/export-request'].post.responses);
+      docsOk = !del.includes('409') && exp.includes('409');
+      docs = `openapi delete-request post=${del}; export-request post=${exp}`;
+    }
+    return [first.status === 202 && second.status !== 409 && (second.status === 403 || second.status === 202) && st.b.toISOString() === first.body?.scheduledPurgeAt && audits.n === 1 && okPar && hAud.n === 1 && docsOk,
+      `first ${first.status}; second ${second.status} ${second.body?.code}; schedule unchanged=${st.b.toISOString() === first.body?.scheduledPurgeAt}; deletion_requested audit rows=${audits.n}; 2 parallel -> ${par.map((r) => r.status)} audit rows=${hAud.n}; ${docs}`];
+  });
+
+  // consent guard on a live member
+  const consentSnap = async (uid) => (await db(`select md5(string_agg(t::text, '|' order by t.id::text)) h, count(*)::int n from "ConsentRecords" t where "userId"=$1`, [uid])).rows[0];
+  await check('IT2-consent-rows-unchanged-by-export-delete-cancel', async () => {
+    const C = await approvedMember('male', 'Consent Keeper');
+    const lg = await login(C);
+    const s0 = await consentSnap(C.userId);
+    await POST('/account/export-request', lg.token, { password: PW });
+    const s1 = await consentSnap(C.userId);
+    const d = await POST('/account/delete-request', lg.token, { password: PW });
+    const s2 = await consentSnap(C.userId);
+    const lg2 = await login(C);
+    const c = await DEL('/account/delete-request', lg2.token);
+    const s3 = await consentSnap(C.userId);
+    return [s0.n > 0 && s0.h === s1.h && s1.h === s2.h && s2.h === s3.h && d.status === 202 && c.status === 200,
+      `rows=${s0.n}; hash before=${s0.h}, after export=${s1.h}, after delete-request(${d.status})=${s2.h}, after cancel(${c.status})=${s3.h}`];
+  });
+  await check('IT2-consent-direct-updates-refused-except-permitted-purge-shape', async () => {
+    const C = await approvedMember('male', 'Consent Guarded');
+    const lg = await login(C);
+    const id = (await row(`select id from "ConsentRecords" where "userId"=$1 limit 1`, [C.userId])).id;
+    const anon = `update "ConsentRecords" set "userId"=null,"userName"='',ip='',"userAgent"='' where id='${id}'`;
+    const attempt = async (sql, pre) => asTx(async () => {
+      try { if (pre) await db(pre); await db(sql); return 'ALLOWED'; } catch (e) { return e.message.includes('CONSENT_RECORDS_APPEND_ONLY') ? 'REFUSED' : `other:${e.message.slice(0, 60)}`; }
+    });
+    const setting = `select set_config('app.purge_user_id','${C.userId}',true)`;
+    const liveNoSetting = await attempt(anon);
+    const liveWithSetting = await attempt(anon, setting); // live member: no schedule
+    await POST('/account/delete-request', lg.token, { password: PW });
+    const pendingNoSetting = await attempt(anon);
+    const pendingWithSetting = await attempt(anon, setting); // the permitted purge shape (rolled back)
+    const pendingOtherShape = await attempt(`update "ConsentRecords" set code='X' where id='${id}'`, setting);
+    const del = await attempt(`delete from "ConsentRecords" where id='${id}'`, setting);
+    const still = await row(`select "userId" from "ConsentRecords" where id=$1`, [id]);
+    const lg2 = await login(C);
+    await DEL('/account/delete-request', lg2.token);
+    return [liveNoSetting === 'REFUSED' && liveWithSetting === 'REFUSED' && pendingNoSetting === 'REFUSED' && pendingWithSetting === 'ALLOWED' && pendingOtherShape === 'REFUSED' && del === 'REFUSED' && still.userId === C.userId,
+      `live/no setting=${liveNoSetting}; live/with setting=${liveWithSetting}; pending/no setting=${pendingNoSetting}; pending/with setting (permitted purge shape, rolled back)=${pendingWithSetting}; pending+setting other column=${pendingOtherShape}; delete=${del}; row still linked=${still.userId === C.userId}`];
+  });
+
+  // AccountAuditLog end to end
+  await check('IT2-account-audit-log-lifecycle-and-purge', async () => {
+    const Z = await approvedMember('female', 'Zulu Audited');
+    const adminBefore = (await db(`select md5(string_agg(t::text,'|' order by t.id::text)) h, count(*)::int n from "AdminAuditLog" t where "adminId"=$1`, [adminId])).rows[0];
+    const lg = await login(Z);
+    const er = await POST('/account/export-request', lg.token, { password: PW });
+    const dl = await GET(`/account/export/${er.body?.requestId}`, lg.token);
+    const dr = await POST('/account/delete-request', lg.token, { password: PW });
+    const lg2 = await login(Z);
+    const dc = await DEL('/account/delete-request', lg2.token);
+    const lo = await POST('/account/logout-all', lg2.token, undefined);
+    const lg3 = await login(Z);
+    const dr2 = await POST('/account/delete-request', lg3.token, { password: PW });
+    const rows = (await db(`select id,"eventType","requestId",ip,"userAgent" from "AccountAuditLog" where "userId"=$1 order by "createdAt"`, [Z.userId])).rows;
+    const types = rows.map((r) => r.eventType);
+    const want = ['export_requested', 'export_downloaded', 'deletion_requested', 'deletion_cancelled', 'logout_all', 'deletion_requested'];
+    const sameSet = JSON.stringify([...types].sort()) === JSON.stringify([...want].sort());
+    const withUa = rows.every((r) => r.userAgent !== '');
+    const ids = rows.map((r) => r.id);
+    const tries = {};
+    for (const [k, sql] of Object.entries({
+      update: `update "AccountAuditLog" set "eventType"='logout_all' where id='${ids[0]}'`,
+      updateIp: `update "AccountAuditLog" set ip='x' where id='${ids[0]}'`,
+      anonymiseLive: `update "AccountAuditLog" set "userId"=null, ip='', "userAgent"='' where id='${ids[0]}'`,
+      delete: `delete from "AccountAuditLog" where id='${ids[0]}'`,
+    })) {
+      try { await db(sql); tries[k] = 'ALLOWED'; } catch (e) { tries[k] = e.message.includes('ACCOUNT_AUDIT_LOG_APPEND_ONLY') ? 'APPEND_ONLY' : e.message.slice(0, 60); }
+    }
+    const refused = Object.values(tries).every((v) => v === 'APPEND_ONLY');
+    // purge
+    await db(`update "Users" set "deletionRequestedAt"=now()-interval '31 days',"deletionScheduledPurgeAt"=now()-interval '1 second' where id=$1`, [Z.userId]);
+    const pr = runPurge();
+    const after = (await db(`select id,"userId","eventType","requestId",ip,"userAgent","createdAt" from "AccountAuditLog" where id = any($1::uuid[]) order by "createdAt"`, [ids])).rows;
+    const kept = after.length === rows.length && after.every((r) => r.userId === null && r.ip === '' && r.userAgent === '');
+    const evUnchanged = JSON.stringify(after.map((r) => r.eventType).sort()) === JSON.stringify(types.sort());
+    const purgeRows = await row(`select count(*)::int n, bool_and("userId" is null) nolink from "AccountAuditLog" where "eventType"='purge_executed'`);
+    const adminAfter = (await db(`select md5(string_agg(t::text,'|' order by t.id::text)) h, count(*)::int n from "AdminAuditLog" t where "adminId"=$1`, [adminId])).rows[0];
+    return [er.status === 202 && dl.status === 200 && dr.status === 202 && dc.status === 200 && lo.status === 200 && dr2.status === 202 && sameSet && withUa && refused
+      && pr.status === 0 && kept && evUnchanged && purgeRows.n >= 1 && purgeRows.nolink && adminBefore.h === adminAfter.h,
+    `actions: export ${er.status}, download ${dl.status}, delete ${dr.status}, cancel ${dc.status}, logout-all ${lo.status}, delete again ${dr2.status}; audit events=${types}; userAgent set on all=${withUa}; UPDATE/DELETE attempts=${JSON.stringify(tries)}; purge exit ${pr.status}; after purge rows kept=${after.length}/${rows.length} with userId null, ip and userAgent cleared=${kept}, event types unchanged=${evUnchanged}; purge_executed rows=${purgeRows.n} (all unlinked=${purgeRows.nolink}); AdminAuditLog hash unchanged=${adminBefore.h === adminAfter.h} (rows ${adminBefore.n}->${adminAfter.n})`];
+  });
+
   return out;
 }
