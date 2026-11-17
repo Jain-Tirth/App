@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { hasErrorCode } from '../apiError';
+import { decideCancelFailure } from '../lib/deletionCancel';
 import { ErrorNotice } from '../components/ErrorNotice';
 import { Logo } from '../components/Logo';
 import { Button } from '../components/ui/button';
@@ -23,6 +24,12 @@ export function DeletedPendingPage({ token, purgeAt, onCancelled, onLogout }: De
   const [error, setError] = useState<FriendlyError | null>(null);
   const [purged, setPurged] = useState(false);
   const inFlight = useRef(false);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  // The button is disabled while busy; restore focus after the re-render.
+  useEffect(() => {
+    if (!busy && error) cancelRef.current?.focus();
+  }, [busy, error]);
 
   async function cancel() {
     if (inFlight.current) return;
@@ -33,11 +40,12 @@ export function DeletedPendingPage({ token, purgeAt, onCancelled, onLogout }: De
       await api.cancelDeletion(token);
       onCancelled();
     } catch (err) {
-      if (hasErrorCode(err, 'UNAUTHORIZED')) {
+      const action = decideCancelFailure(err);
+      if (action === 'logout') {
         onLogout();
         return;
       }
-      if (hasErrorCode(err, 'DELETE_REQUEST_NOT_FOUND')) {
+      if (action === 'recheck') {
         // Nothing is pending any more; the app re-checks the account.
         onCancelled();
         return;
@@ -73,6 +81,7 @@ export function DeletedPendingPage({ token, purgeAt, onCancelled, onLogout }: De
         ) : null}
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button
+            ref={cancelRef}
             type="button"
             data-testid="cancel-deletion"
             disabled={busy}

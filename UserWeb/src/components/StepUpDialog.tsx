@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { hasErrorCode } from '../apiError';
 import { describeError, type FriendlyError } from '../errors/messages';
@@ -62,9 +62,13 @@ export function StepUpDialog({
       setError(describeError(err, 'stepUp'));
       inFlight.current = false;
       setBusy(false);
-      inputRef.current?.focus();
     }
   }
+
+  // The input is disabled while busy, so focus can only return after the re-render.
+  useEffect(() => {
+    if (!busy && error) inputRef.current?.focus();
+  }, [busy, error]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
