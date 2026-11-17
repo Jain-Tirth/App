@@ -7,6 +7,8 @@ import { describeError, type FriendlyError } from '../errors/messages';
 import { ageInYearsUtc, dateOfBirthHint, todayUtc } from '../lib/age';
 import { EMPLOYMENT_TYPE_OPTIONS } from '../lib/discovery';
 import type { ProfileResponse } from '../types';
+import { useFormDraft } from '../pwa/useFormDraft';
+import { userIdFromAccessToken } from '../pwa/tokenUser';
 import { Logo } from '../components/Logo';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -41,6 +43,15 @@ const STEPS = [
   { id: 4, title: 'Education & Career', icon: GraduationCap, desc: 'Degree, job & income' },
   { id: 5, title: 'Family & Partner', icon: Heart, desc: 'About you & expectations' },
 ];
+
+/** The only fields the local draft may hold. No government-ID or document data is ever listed. */
+const WIZARD_DRAFT_FIELDS = {
+  step1: ['gender', 'dateOfBirth', 'heightCm', 'weightKg', 'physicalStatus', 'maritalStatus', 'eatingHabits'],
+  step2: ['religion', 'caste', 'subcaste', 'gothra', 'openToAnySubcaste', 'dosh'],
+  step3: ['country', 'state', 'city'],
+  step4: ['education', 'employmentType', 'occupation', 'incomeCurrency', 'annualIncomeRange'],
+  step5: ['familyStatus', 'aboutMyself', 'lookingFor'],
+} as const;
 
 function cmToFeetInches(cm: number): string {
   if (!cm || isNaN(cm)) return '';
@@ -105,6 +116,22 @@ export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps)
     familyStatus: String(profile?.profile?.additionalDetails?.familyStatus ?? 'Middle Class'),
     aboutMyself: String(profile?.profile?.additionalDetails?.aboutMyself ?? ''),
     lookingFor: String(profile?.profile?.additionalDetails?.lookingFor ?? ''),
+  });
+
+  // Local copy of unsaved step values: keyed by member id, IndexedDB, wiped on logout. Profile fields only.
+  const userId = userIdFromAccessToken(token) ?? profile?.profile?.userId ?? null;
+  const { markSaved } = useFormDraft({
+    formId: 'profile-wizard',
+    userId,
+    values: { step1, step2, step3, step4, step5 },
+    allowed: WIZARD_DRAFT_FIELDS,
+    onRestore: (restored) => {
+      if (restored.step1) setStep1((current) => ({ ...current, ...restored.step1 }) as typeof current);
+      if (restored.step2) setStep2((current) => ({ ...current, ...restored.step2 }) as typeof current);
+      if (restored.step3) setStep3((current) => ({ ...current, ...restored.step3 }) as typeof current);
+      if (restored.step4) setStep4((current) => ({ ...current, ...restored.step4 }) as typeof current);
+      if (restored.step5) setStep5((current) => ({ ...current, ...restored.step5 }) as typeof current);
+    },
   });
 
   const age = useMemo(() => {
@@ -172,6 +199,7 @@ export function WizardPage({ token, profile, onProfileUpdate }: WizardPageProps)
       }
 
       onProfileUpdate(response);
+      markSaved(`step${step}`);
 
       if (step < 5) {
         setStep((current) => current + 1);

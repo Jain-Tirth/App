@@ -6,6 +6,8 @@ import { DeletedPendingPage } from './pages/DeletedPendingPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { hasErrorCode } from './apiError';
 import { resetCache } from './lib/shortlistCache';
+import { PwaStatus } from './components/PwaStatus';
+import { clearPwaUserData } from './pwa/clearUserData';
 import { routeForStatus } from './lib/profileStatus';
 import { ConsentGate } from './components/ConsentPanels';
 import { ErrorNotice } from './components/ErrorNotice';
@@ -65,6 +67,7 @@ function AppRouter() {
     localStorage.removeItem('user_refresh_token');
     clearAllExportRequests();
     resetCache();
+    clearPwaUserData();
     setAccessToken(null);
     setRefreshToken(null);
     setProfile(null);
@@ -384,5 +387,10 @@ function AppRouter() {
 }
 
 export default function App() {
-  return <AppRouter />;
+  return (
+    <>
+      <PwaStatus />
+      <AppRouter />
+    </>
+  );
 }

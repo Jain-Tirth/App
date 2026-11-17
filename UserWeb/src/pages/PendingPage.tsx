@@ -3,6 +3,7 @@ import type { ProfileResponse, ProfileReviewStatus } from '../types';
 import { api } from '../api';
 import { hasErrorCode } from '../apiError';
 import { ErrorNotice } from '../components/ErrorNotice';
+import { InstallPrompt } from '../components/InstallPrompt';
 import { Logo } from '../components/Logo';
 import { ReviewDecisionPanel } from '../components/ReviewDecisionPanel';
 import { SubmitForReview } from '../components/SubmitForReview';
@@ -51,7 +52,8 @@ export function PendingPage({ token, status, profile, onProfileUpdate, onLogout 
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-xl items-center px-4 py-12">
+    <div className="mx-auto flex min-h-screen max-w-xl flex-col items-stretch justify-center px-4 py-12">
+      <InstallPrompt token={token} />
       <Card
         data-testid="pending-state"
         data-state={status}

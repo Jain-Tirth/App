@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import type { ProfileResponse } from '../types';
 import { ConsentHistory } from '../components/ConsentPanels';
 import { DiscoverySection } from '../components/DiscoverySection';
+import { InstallPrompt } from '../components/InstallPrompt';
 import { Logo } from '../components/Logo';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
@@ -174,6 +175,7 @@ export function AppPage({ token, profile, onLogout }: AppPageProps) {
 
       {/* ── Main Container ───────────────────────────────────────────── */}
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
+        <InstallPrompt token={token} />
         {/* Welcome Status Card */}
         <div className="relative overflow-hidden rounded-[2rem] border border-brand-border bg-gradient-to-r from-white via-brand-primary-soft/30 to-brand-gold-light/40 p-6 sm:p-8 shadow-soft">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
