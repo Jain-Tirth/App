@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 import { Download, Share } from 'lucide-react';
 import { Button } from './ui/button';
 import { installPromptMode, isDismissed, rememberDismissal, rememberShown, wasShown } from '../pwa/installPrompt';
@@ -10,12 +10,11 @@ import { userIdFromAccessToken } from '../pwa/tokenUser';
  * Rendered only by PendingPage and AppPage, i.e. after the profile was submitted, so it can never
  * appear on first load, login, onboarding or the account-deletion screen.
  */
-export function InstallPrompt({ token }: { token: string }) {
+export function InstallPrompt({ token, returnFocusRef }: { token: string; returnFocusRef: RefObject<HTMLElement | null> }) {
   const userId = userIdFromAccessToken(token);
   const { installEvent, installed } = usePwaState();
   // Hidden once dismissed, or once it has already been displayed to this member (shown once).
   const [dismissed, setDismissed] = useState(() => (userId ? isDismissed(userId) || wasShown(userId) : true));
-  const anchorRef = useRef<HTMLDivElement>(null);
 
   const mode = installPromptMode({
     installed,
@@ -28,13 +27,11 @@ export function InstallPrompt({ token }: { token: string }) {
     if (mode && userId) rememberShown(userId);
   }, [mode, userId]);
 
-  // Stable, always-mounted focus target so keyboard focus survives the prompt unmounting.
-  const anchor = <div ref={anchorRef} tabIndex={-1} data-testid="install-focus-anchor" className="outline-none" />;
-  if (!mode || !userId) return anchor;
+  if (!mode || !userId) return null;
 
   function dismiss() {
     if (userId) rememberDismissal(userId);
-    anchorRef.current?.focus();
+    returnFocusRef.current?.focus();
     setDismissed(true);
   }
 
@@ -48,13 +45,11 @@ export function InstallPrompt({ token }: { token: string }) {
       // The browser refused to show its dialog; the prompt stays so the member can try again.
     }
     // A captured event can be used only once.
-    anchorRef.current?.focus();
+    returnFocusRef.current?.focus();
     setPwaState({ installEvent: null });
   }
 
   return (
-    <>
-    {anchor}
     <section
       aria-label="Install the app"
       data-testid="install-prompt"
@@ -82,6 +77,5 @@ export function InstallPrompt({ token }: { token: string }) {
         </Button>
       </div>
     </section>
-    </>
   );
 }

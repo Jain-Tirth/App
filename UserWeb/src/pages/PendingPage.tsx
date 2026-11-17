@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ProfileResponse, ProfileReviewStatus } from '../types';
 import { api } from '../api';
 import { hasErrorCode } from '../apiError';
@@ -26,6 +26,7 @@ interface PendingPageProps {
 const POLL_INTERVAL_MS = 4000;
 
 export function PendingPage({ token, status, profile, onProfileUpdate, onLogout }: PendingPageProps) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const [withdrawing, setWithdrawing] = useState(false);
   const [checkError, setCheckError] = useState<FriendlyError | null>(null);
   const actions = allowedActions(status);
@@ -53,7 +54,7 @@ export function PendingPage({ token, status, profile, onProfileUpdate, onLogout 
 
   return (
     <div className="mx-auto flex min-h-screen max-w-xl flex-col items-stretch justify-center px-4 py-12">
-      <InstallPrompt token={token} />
+      <InstallPrompt token={token} returnFocusRef={headingRef} />
       <Card
         data-testid="pending-state"
         data-state={status}
@@ -88,7 +89,14 @@ export function PendingPage({ token, status, profile, onProfileUpdate, onLogout 
                 <ShieldCheck className="h-3.5 w-3.5 text-amber-600" />
                 <span>Verification In Progress</span>
               </div>
-              <h1 className="font-serif text-3xl font-bold text-brand-charcoal">Profile Under Review</h1>
+              <h1
+                ref={headingRef}
+                tabIndex={-1}
+                data-testid="page-heading"
+                className="rounded-md font-serif text-3xl font-bold text-brand-charcoal focus:outline-none focus:ring-4 focus:ring-brand-charcoal/60 focus:ring-offset-2"
+              >
+                Profile Under Review
+              </h1>
               <p
                 data-testid="pending-submitted-text"
                 className="mt-2 text-sm leading-relaxed text-brand-muted"

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { ProfileResponse } from '../types';
 import { ConsentHistory } from '../components/ConsentPanels';
@@ -36,6 +36,7 @@ function cmToFeetInches(cm: number | null): string {
 
 export function AppPage({ token, profile, onLogout }: AppPageProps) {
   const navigate = useNavigate();
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const [activeTab, setActiveTab] = useState<'matches' | 'dossier'>('matches');
 
   const user = profile?.profile?.user;
@@ -175,7 +176,7 @@ export function AppPage({ token, profile, onLogout }: AppPageProps) {
 
       {/* ── Main Container ───────────────────────────────────────────── */}
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
-        <InstallPrompt token={token} />
+        <InstallPrompt token={token} returnFocusRef={headingRef} />
         {/* Welcome Status Card */}
         <div className="relative overflow-hidden rounded-[2rem] border border-brand-border bg-gradient-to-r from-white via-brand-primary-soft/30 to-brand-gold-light/40 p-6 sm:p-8 shadow-soft">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
@@ -187,7 +188,12 @@ export function AppPage({ token, profile, onLogout }: AppPageProps) {
                 </span>
               </div>
 
-              <h1 className="font-serif text-3xl sm:text-4xl font-bold text-brand-charcoal">
+              <h1
+                ref={headingRef}
+                tabIndex={-1}
+                data-testid="page-heading"
+                className="rounded-md font-serif text-3xl sm:text-4xl font-bold text-brand-charcoal focus:outline-none focus:ring-4 focus:ring-brand-charcoal/60 focus:ring-offset-2"
+              >
                 Namaste, {user?.name}
               </h1>
               <p className="text-sm text-brand-muted max-w-2xl leading-relaxed">
