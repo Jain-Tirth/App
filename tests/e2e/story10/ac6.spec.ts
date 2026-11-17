@@ -134,7 +134,7 @@ test('AC6 native "Not now" through the browser dialog (userChoice dismissed) is 
   await noPrompt(page);
 });
 
-test('AC6 FINDING CHECK: before dismissing, a reload shows the prompt again, and so does re-rendering AppPage (the prompt is "consumed" only by dismiss/install)', async ({ page }) => {
+test('AC6 shown once: without acting, navigating away and back, and a reload, do NOT show it again; the shown flag is per user id', async ({ page }) => {
   const m = await approved();
   await firstVisit(page, '/login');
   await fireInstallEvent(page);
@@ -143,13 +143,65 @@ test('AC6 FINDING CHECK: before dismissing, a reload shows the prompt again, and
   await page.getByTestId('login-submit').click();
   await page.waitForURL(/\/app/);
   await expect(prompt(page)).toBeVisible(); // first render
+  const keys = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('pwa_install_')));
+  expect(keys.filter((k) => k.startsWith('pwa_install_shown:'))).toHaveLength(1);
+  expect(keys.filter((k) => k.startsWith('pwa_install_dismissed:'))).toHaveLength(0);
   await page.getByRole('link', { name: 'Interests' }).click();
   await expect(page.getByRole('heading', { name: 'Interests', level: 1 })).toBeVisible();
   await page.goBack();
-  await expect(prompt(page)).toBeVisible(); // second render, not dismissed: shown again
+  await expect(page).toHaveURL(/\/app/);
+  await fireInstallEvent(page);
+  await page.waitForTimeout(500);
+  await noPrompt(page);
   await page.reload();
   await fireInstallEvent(page);
-  await expect(prompt(page)).toBeVisible(); // reload: shown again
+  await expect(page.getByRole('link', { name: 'Interests' })).toBeVisible();
+  await page.waitForTimeout(500);
+  await noPrompt(page);
+});
+
+test('AC6 shown once per member across logout/login: member A sees it once, B sees it once, A does not see it again', async ({ page }) => {
+  const a = await approved();
+  const b = await approved();
+  await firstVisit(page, '/login');
+  await fireInstallEvent(page);
+  await page.getByTestId('login-email').fill(a.email);
+  await page.getByTestId('login-password').fill(a.password);
+  await page.getByTestId('login-submit').click();
+  await page.waitForURL(/\/app/);
+  await expect(prompt(page)).toBeVisible();
+  await page.reload();
+  await fireInstallEvent(page);
+  await page.waitForTimeout(500);
+  await noPrompt(page);
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.waitForURL(/\/login|\/$/);
+  await uiLogin(page, b);
+  await fireInstallEvent(page);
+  await expect(prompt(page)).toBeVisible();
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.waitForURL(/\/login|\/$/);
+  await uiLogin(page, a);
+  await fireInstallEvent(page);
+  await page.waitForTimeout(500);
+  await noPrompt(page);
+  const shown = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('pwa_install_shown:')));
+  expect(shown).toHaveLength(2);
+});
+
+test('AC6 the shown flag is NOT set when nothing was displayed (beforeinstallprompt never fired); a later event then shows once', async ({ page }) => {
+  const m = await approved();
+  await firstVisit(page, '/login');
+  await page.getByTestId('login-email').fill(m.email);
+  await page.getByTestId('login-password').fill(m.password);
+  await page.getByTestId('login-submit').click();
+  await page.waitForURL(/\/app/);
+  await page.waitForTimeout(500);
+  await noPrompt(page);
+  expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('pwa_install_')))).toEqual([]);
+  await fireInstallEvent(page);
+  await expect(prompt(page)).toBeVisible();
+  expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('pwa_install_shown:')))).toHaveLength(1);
 });
 
 test('AC6 dismissal is per member: another member on the same browser still gets the prompt once; the first member does not', async ({ page }) => {
@@ -195,6 +247,7 @@ test.describe('iOS Safari (user agent emulation)', () => {
     await expect(prompt(page)).toHaveCount(0);
     await page.reload();
     await expect(page.getByTestId('pending-state')).toBeVisible();
+    expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('pwa_install_shown:')))).toHaveLength(1);
     await page.waitForTimeout(500);
     await noPrompt(page);
   });

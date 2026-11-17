@@ -128,11 +128,14 @@ test('AC8 install prompt (iOS manual text): named region, readable instruction, 
   await ctx.close();
 });
 
-// KNOWN DEFECT (expected to fail until fixed): the dismissed prompt unmounts with focus on it, so focus drops to <body>.
-// Stories 8b and 9b treated the same behaviour as a defect (focus must stay on, or move to, a control). test.fail keeps the
-// suite green while documenting it; when the app is fixed this test starts "passing" unexpectedly and flags itself.
-test('AC8 DEFECT PIN: after dismissing the install prompt by keyboard focus drops to BODY (should stay on / move to a real control)', async ({ page }) => {
-  // Pins the CURRENT (defective) behaviour: this test asserts BODY. When the app is fixed it fails; flip it to not.toBe('BODY').
+const activeInfo = (page: Page) =>
+  page.evaluate(() => {
+    const a = document.activeElement as HTMLElement | null;
+    const r = a?.getBoundingClientRect();
+    return { tag: a?.tagName, testid: a?.getAttribute('data-testid'), w: r?.width, h: r?.height };
+  });
+
+test('AC8 after dismissing the install prompt by keyboard, focus lands on the focus anchor (not BODY)', async ({ page }) => {
   const m = await approved();
   await firstVisit(page, '/login');
   await fireInstallEvent(page);
@@ -142,7 +145,43 @@ test('AC8 DEFECT PIN: after dismissing the install prompt by keyboard focus drop
   await tabTo(page, dismiss);
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('install-prompt')).toHaveCount(0);
-  const tag = await page.evaluate(() => document.activeElement?.tagName);
-  test.info().annotations.push({ type: 'active-element-after-dismiss', description: String(tag) });
-  expect(tag).toBe('BODY');
+  const info = await activeInfo(page);
+  test.info().annotations.push({ type: 'active-after-dismiss', description: JSON.stringify(info) });
+  expect(info.testid).toBe('install-focus-anchor');
+  await attachShot(page, 'ac8-after-dismiss-focus');
+});
+
+test('AC8 after install (appinstalled via Install app), focus lands on the focus anchor (not BODY)', async ({ page }) => {
+  const m = await submitted();
+  await firstVisit(page, '/login');
+  await fireInstallEvent(page, 'accepted');
+  await spaLogin(page, m, /\/pending/);
+  const install = page.getByTestId('install-button');
+  await tabTo(page, install);
+  await page.keyboard.press('Enter');
+  await expect.poll(() => page.evaluate(() => (window as any).__installPromptCalls)).toBe(1);
+  await page.evaluate(() => window.dispatchEvent(new Event('appinstalled')));
+  await expect(page.getByTestId('install-prompt')).toHaveCount(0);
+  const info = await activeInfo(page);
+  test.info().annotations.push({ type: 'active-after-install', description: JSON.stringify(info) });
+  expect(info.testid).toBe('install-focus-anchor');
+});
+
+// Judgement probe: the anchor is zero size. Records whether a sighted keyboard user can see where focus is after dismissal.
+test('AC8 JUDGEMENT: focus anchor visibility after dismissal (records size and indicator; fails if focus is effectively invisible)', async ({ page }) => {
+  const m = await approved();
+  await firstVisit(page, '/login');
+  await fireInstallEvent(page);
+  await spaLogin(page, m, /\/app/);
+  const dismiss = page.getByTestId('install-dismiss');
+  await tabTo(page, dismiss);
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('install-prompt')).toHaveCount(0);
+  const info = await activeInfo(page);
+  expect(info.testid).toBe('install-focus-anchor');
+  const visible = (info.w ?? 0) > 0 && (info.h ?? 0) > 0;
+  await page.keyboard.press('Tab');
+  const next = await activeInfo(page);
+  test.info().annotations.push({ type: 'anchor-and-next-tab', description: JSON.stringify({ info, visible, next }) });
+  expect(visible, `anchor is ${info.w}x${info.h}: a sighted keyboard user sees no focus indicator; next Tab goes to ${JSON.stringify(next)}`).toBe(true);
 });
