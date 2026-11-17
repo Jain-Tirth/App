@@ -450,6 +450,14 @@ describe('deletion and purge', () => {
 
     const requestedAt = new Date();
 
+    // The shared test DB may hold other members left pending deletion by API
+    // runs; the purge job purges every due member, so clear them first.
+    await pool.query(
+      `UPDATE "Users" SET "deletionRequestedAt" = NULL, "deletionScheduledPurgeAt" = NULL
+       WHERE "id" <> $1 AND "deletionScheduledPurgeAt" IS NOT NULL`,
+      [member.userId],
+    );
+
     now = requestedAt;
     const scheduled = await service.requestDeletion(member.userId, PASSWORD, AUDIT);
     const purgesBefore = await pool.query(
