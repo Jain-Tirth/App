@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { ProfileResponse } from '../types';
-import { ConsentHistory } from '../components/ConsentPanels';
 import { DiscoverySection } from '../components/DiscoverySection';
 import { InstallPrompt } from '../components/InstallPrompt';
 import { Logo } from '../components/Logo';
@@ -178,16 +177,6 @@ export function AppPage({ token, profile, onLogout }: AppPageProps) {
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
         <InstallPrompt token={token} returnFocusRef={headingRef} />
         {/* Welcome Status Card */}
-        <div className="relative overflow-hidden rounded-[2rem] border border-brand-border bg-gradient-to-r from-white via-brand-primary-soft/30 to-brand-gold-light/40 p-6 sm:p-8 shadow-soft">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
-                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" />
-                  Active & Verified Community Member
-                </span>
-              </div>
-
               <h1
                 ref={headingRef}
                 tabIndex={-1}
@@ -196,37 +185,6 @@ export function AppPage({ token, profile, onLogout }: AppPageProps) {
               >
                 Namaste, {user?.name}
               </h1>
-              <p className="text-sm text-brand-muted max-w-2xl leading-relaxed">
-                Connect with trusted, verified candidates from our community and initiate contact with families.
-              </p>
-            </div>
-
-            {/* Quick Summary Pill */}
-            <div className="flex items-center gap-4 bg-white/80 backdrop-blur-sm rounded-2xl border border-brand-border p-4 shadow-sm self-start md:self-auto">
-              <div
-                aria-hidden="true"
-                className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-primary text-white font-bold text-xl"
-              >
-                {user?.name?.charAt(0) ?? 'D'}
-              </div>
-              <div>
-                <span className="block text-xs uppercase tracking-wider text-brand-muted">
-                  Community
-                </span>
-                <span className="block text-sm font-semibold text-brand-charcoal">
-                  100% Complete & Approved
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('dossier')}
-                  className="mt-0.5 text-xs text-brand-primary hover:underline font-medium"
-                >
-                  View Details &rarr;
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
 
         {/* ── TAB 1: DISCOVER MATCHES ──────────────────────────────────── */}
         {activeTab === 'matches' && <DiscoverySection token={token} onLogout={onLogout} />}
@@ -239,9 +197,6 @@ export function AppPage({ token, profile, onLogout }: AppPageProps) {
                 <h2 className="font-serif text-2xl font-bold text-brand-charcoal">
                   My Profile
                 </h2>
-                <p className="text-xs text-brand-muted">
-                  Official community submission verified by administration.
-                </p>
               </div>
 
               <Button
@@ -402,8 +357,6 @@ export function AppPage({ token, profile, onLogout }: AppPageProps) {
                 </div>
               </Card>
             </div>
-
-            <ConsentHistory token={token} />
           </div>
         )}
       </main>

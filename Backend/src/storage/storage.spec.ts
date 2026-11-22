@@ -9,7 +9,7 @@ describe('presignS3Url', () => {
       method: 'GET',
       host: 'examplebucket.s3.amazonaws.com',
       path: '/test.txt',
-      region: 'us-east-1',
+      region: 'ap-south-1',
       accessKeyId: 'AKIAIOSFODNN7EXAMPLE',
       secretAccessKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
       expiresInSeconds: 86400,

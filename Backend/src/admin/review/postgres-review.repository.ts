@@ -59,12 +59,9 @@ export class PostgresReviewRepository implements ReviewRepository {
     const result = await this.db.query<QueueDbRow>(
       `SELECT u."id" AS "userId", p."profileUid", u."name",
               u."profileSubmittedAt" AS "submittedAt"
-       FROM "Users" u
+       FROM "v_profiles_awaiting_review" q
+       JOIN "Users" u ON u."id" = q."userId"
        LEFT JOIN "Profiles" p ON p."userId" = u."id"
-       WHERE u."profileReviewStatus" = 'submitted'
-         AND u."profileSubmittedAt" IS NOT NULL
-         AND u."accountStatus" = 'pending'
-         AND u."role" = 'user'
        ORDER BY u."profileSubmittedAt" ASC, u."id" ASC`,
     );
 
