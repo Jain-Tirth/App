@@ -70,3 +70,9 @@ favicon_io/
 
 # Local claude code agent setup
 .claude/
+
+# Test directory
+test-results/
+
+# Specs for local tracking
+specs.md
