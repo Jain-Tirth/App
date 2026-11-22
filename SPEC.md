@@ -48,7 +48,7 @@
 | Business model | **Freemium.** Free registration and browsing; **Prime** unlocks contact details, chat and premium discovery. **Elite/Assisted** in Phase 3. |
 | Payments | **Razorpay web checkout** at launch. Apple/Google store billing and RevenueCat arrive with the Expo migration. |
 | Profile depth | Full field set from the reference screenshots, with mandatory vs optional explicit. |
-| Trust and safety | OTP, government ID + face/liveness verification, admin approval, status state machine, DPDP consent and retention. |
+| Trust and safety | OTP, government ID, admin approval, status state machine, DPDP consent and retention. |
 | Architecture | Modular monolith with stateless HTTP API, Redis, BullMQ workers, S3-compatible object storage, Socket.io, OpenAPI contract. |
 | Code sharing | Framework-agnostic domain/API layer in `packages/core`, consumed by the PWA now and by Expo later. Web-only UI stays in `UserWeb`. |
 | Delivery model | Spec written to repo files (no external issue tracker is configured). |
@@ -66,7 +66,6 @@
 | Constraint | Impact | Mitigation |
 |---|---|---|
 | iOS push only works for installed home-screen PWAs (16.4+) | Some iOS members miss push | In-app notification centre, SMS/email for critical events, clear install prompt |
-| Strong liveness detection is limited in a browser | Higher spoof risk | Hosted KYC web flow, selfie challenge, manual review fallback, face-match scoring |
 | No app-store distribution | Less discoverability | Installable PWA, deep links, marketing site, store listings in the Expo phase |
 | No store billing | Only Razorpay at launch | Razorpay covers cards, UPI, netbanking and wallets in India |
 | Background sync is unreliable on iOS | Offline saves may wait | Save on focus/visibility, explicit retry, IndexedDB drafts |
@@ -104,7 +103,7 @@ Build a mobile-first, community-specific matrimony product delivered as an insta
 3. **An admin panel** for reviewing submissions, verifying identities and photos, moderating content, supporting members and operating the marketplace.
 4. **A shared `packages/core` layer** containing the API client, schemas, types, formatters, validators and domain rules, so the later Expo app reuses the product logic unchanged.
 
-The product is free to join and browse. Verified profiles are the default: no profile becomes visible to other members until the member passes OTP, completes the mandatory profile, passes government ID and photo verification, and is approved by an admin. Members can express interest and shortlist for free; Prime unlocks contact details and chat. The experience is available in English, Hindi and Gujarati, and privacy controls let members decide who sees their photos, contact details and activity.
+The product is free to join and browse. Verified profiles are the default: no profile becomes visible to other members until the member passes OTP, completes the mandatory profile, passes government ID and photo verification, and is approved by an admin. Members can express interest and shortlist for free; Prime unlocks contact details and chat. The experience is available in English, Hindi and Gujarati.
 
 ---
 
@@ -164,7 +163,7 @@ The product is free to join and browse. Verified profiles are the default: no pr
 42. As a member, I want to record my dosh and manglik status, so that horoscope-conscious families can assess compatibility.
 43. As a member, I want to record my country, state and city, so that location-based matching works.
 44. As a member, I want to record my citizenship and resident status, so that NRI and visa-related expectations are clear.
-45. As a member, I want to record whether I am interested in settling abroad, so that I attract like-minded matches.
+45. As a member, I want to record whether I am interested in settling abroad, so that I attract like-minded matches.(I am confirming it is not needed)
 46. As a member, I want to add my highest degree, specialisation, institute and year, so that my education is credible.
 47. As a member, I want to add post-graduation, under-graduation and school details, so that my full academic history is available.
 48. As a member, I want to add my employment type, occupation, employer and income range, so that career compatibility is clear.
@@ -226,13 +225,13 @@ The product is free to join and browse. Verified profiles are the default: no pr
 98. As a member, I want a daily set of curated recommendations, so that I do not have to search from scratch.
 99. As a member, I want to see reverse matches — people whose preferences match me — so that I know who is likely to respond.
 100. As a member, I want to see new members who match my preferences, so that I can act early.
-101. As a member, I want to see who is online now, so that I can start a conversation when it is timely.
-102. As a member, I want to search by age, height, marital status, religion, community, language, location, education, profession, income, diet and manglik status, so that I can narrow results.
-103. As a member, I want to search by profile ID, so that I can find a specific person.
+101. As a member, I want to see who is online now, so that I can start a conversation when it is timely.(Don't provide this feature, it is against the privacy of the user)
+102. As a member, I want to search by marital status, religion, community, language, location, education, profession, income, diet and manglik status, so that I can narrow results.
+103. As a member, I want to search by profile ID, so that I can find a specific person.(Don't provide search functionality through profile ID)
 104. As a member, I want to save a search, so that I can repeat it later.
 105. As a member, I want to sort results by relevance, newest, last active or compatibility, so that I can browse the way I prefer.
 106. As a member, I want to open a full profile with photos, personal, professional, family, lifestyle, horoscope and preferences, so that I can evaluate a match.
-107. As a member, I want to see why a profile is recommended, so that the match is explainable.
+107. As a member, I want to see why a profile is recommended, so that the match is explainable.(Don't provide explainable reason to the user)
 108. As a member, I want to see verification badges, so that I can prioritise trustworthy profiles.
 109. As a member, I want contact details masked until I am entitled to see them, so that privacy is preserved.
 110. As a member, I want to see who viewed my profile, so that I can gauge interest.
